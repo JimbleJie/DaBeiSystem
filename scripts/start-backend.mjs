@@ -42,18 +42,24 @@ function resolvePython() {
 }
 
 const python = resolvePython();
+const reloadEnabled = process.env.BACKEND_RELOAD !== "0";
+const uvicornArgs = [
+  "-m",
+  "uvicorn",
+  "backend.main:app",
+  "--host",
+  config.host,
+  "--port",
+  String(config.backend.port)
+];
+
+if (reloadEnabled) {
+  uvicornArgs.push("--reload", "--reload-dir", "backend");
+}
 
 const child = spawn(
   python,
-  [
-    "-m",
-    "uvicorn",
-    "backend.main:app",
-    "--host",
-    config.host,
-    "--port",
-    String(config.backend.port)
-  ],
+  uvicornArgs,
   {
     cwd: root,
     stdio: "inherit"
