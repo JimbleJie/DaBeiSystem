@@ -26,7 +26,7 @@ class MockPlatformAdapter:
 
     async def pull_orders(self, products: list[dict[str, Any]]) -> list[dict[str, Any]]:
         product = random.choice(products)
-        quantity = 1 if product["skuId"] == "POT-001" else random.randint(1, 2)
+        quantity = random.randint(1, 2)
 
         return [
             {

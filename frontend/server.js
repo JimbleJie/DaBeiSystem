@@ -17,6 +17,12 @@ const contentTypes = {
   ".json": "application/json; charset=utf-8"
 };
 
+const noCacheHeaders = {
+  "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+  "Pragma": "no-cache",
+  "Expires": "0"
+};
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
@@ -25,7 +31,10 @@ const server = http.createServer(async (req, res) => {
       const browserHost = url.hostname || "127.0.0.1";
       const apiHost = bindOnlyHosts.has(runtimeConfig.host) ? browserHost : runtimeConfig.host;
       const apiBaseUrl = `http://${apiHost}:${runtimeConfig.backend.port}${runtimeConfig.backend.apiPath}`;
-      res.writeHead(200, { "Content-Type": "text/javascript; charset=utf-8" });
+      res.writeHead(200, {
+        "Content-Type": "text/javascript; charset=utf-8",
+        ...noCacheHeaders
+      });
       res.end(`window.APP_CONFIG = ${JSON.stringify({ apiBaseUrl })};`);
       return;
     }
@@ -37,7 +46,8 @@ const server = http.createServer(async (req, res) => {
     const data = await readFile(filePath);
 
     res.writeHead(200, {
-      "Content-Type": contentTypes[extname(filePath)] || "application/octet-stream"
+      "Content-Type": contentTypes[extname(filePath)] || "application/octet-stream",
+      ...noCacheHeaders
     });
     res.end(data);
   } catch {

@@ -37,6 +37,25 @@ npm run frontend
 - 订单管理：`http://{host}:{frontend.port}/orders`
 - 后端健康检查：`http://{host}:{backend.port}{backend.apiPath}/health`
 
+## 数据存储
+
+后台业务数据使用 SQLite 持久化，数据库文件位于：
+
+```text
+data/inventory.sqlite
+```
+
+产品、库存标签、入库单、出库单、订单和库存流水都会写入这个文件。更换电脑或上传 Git 时，把 `data/inventory.sqlite` 一起提交/拷贝即可保留已有数据。
+
+数据库按业务实体建表，核心表包括：
+
+- `products`
+- `inventory_labels`
+- `receipts`
+- `orders`
+- `stock_movements`
+- `stock_events`
+
 ## 目录
 
 ```text
@@ -44,6 +63,8 @@ android/
   app/            原生 Android 库存 App
 config/
   runtime.json    前后端主机、端口、API 路径配置
+data/
+  inventory.sqlite SQLite 数据文件
 backend/
   main.py         FastAPI 路由入口
   services.py     订单、库存、物流业务逻辑
@@ -64,7 +85,7 @@ Android 版本在 `android/` 目录中，用 Android Studio 打开即可。
 
 - 首页两个按钮：入库、出库
 - 入库第一步：判断新品/老产品
-- 入库第二步：输入合格数量、不合格数量，选择入库人（小梅雨、六一）
+- 入库第二步：输入合格数量，选择入库人（小梅雨、六一）
 - 入库第三步：点击创建并入库，给每个合格产品生成唯一二维码编码
 
 二维码格式：

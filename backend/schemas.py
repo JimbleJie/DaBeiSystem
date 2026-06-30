@@ -60,7 +60,6 @@ class OutboundStockRequest(BaseModel):
 class InspectReceiptRequest(BaseModel):
     productName: str = "壶"
     qualifiedQuantity: int = Field(ge=1)
-    rejectedQuantity: int = Field(default=0, ge=0)
     inspector: str | None = None
 
 

@@ -4,6 +4,7 @@ from typing import Any
 from uuid import uuid4
 
 from .adapters import ADAPTERS, PLATFORMS, random_buyer, utc_now
+from .storage import load_state, save_state
 
 
 class BusinessError(Exception):
@@ -11,65 +12,43 @@ class BusinessError(Exception):
 
 
 def _initial_products() -> list[dict[str, Any]]:
-    return [
-        {
-            "productId": "PRD-POT-001",
-            "skuId": "POT-001",
-            "name": "手作陶瓷壶",
-            "spec": "600ml",
-            "unit": "件",
-            "category": "茶具",
-            "barcode": "6900000000010",
-            "price": 168,
-            "centralStock": 10,
-            "lockedStock": 0,
-            "inTransitStock": 0,
-            "safeStock": 3,
-            "batchNo": "BATCH-TEA-001",
-            "productionDate": "2026-06-01",
-            "expiryDate": "2028-06-01",
-            "supplier": "景德镇源头工厂",
-            "warehouse": "杭州主仓",
-            "location": "A-03-05",
-            "qrCode": "QR-PRD-POT-001-BATCH-TEA-001",
-        },
-        {
-            "productId": "PRD-CUP-002",
-            "skuId": "CUP-002",
-            "name": "配套品茗杯",
-            "spec": "80ml",
-            "unit": "件",
-            "category": "茶具",
-            "barcode": "6900000000027",
-            "price": 39,
-            "centralStock": 24,
-            "lockedStock": 0,
-            "inTransitStock": 0,
-            "safeStock": 6,
-            "batchNo": "BATCH-CUP-001",
-            "productionDate": "2026-06-05",
-            "expiryDate": "2028-06-05",
-            "supplier": "景德镇源头工厂",
-            "warehouse": "杭州主仓",
-            "location": "A-03-06",
-            "qrCode": "QR-PRD-CUP-002-BATCH-CUP-001",
-        },
-    ]
+    return []
 
 
 products = _initial_products()
 orders: list[dict[str, Any]] = []
-stock_events: list[dict[str, Any]] = [
-    {
-        "id": str(uuid4()),
-        "type": "init",
-        "message": "系统初始化库存，全部渠道库存镜像已同步",
-        "createdAt": utc_now(),
-    }
-]
+stock_events: list[dict[str, Any]] = []
 stock_movements: list[dict[str, Any]] = []
 receipts: list[dict[str, Any]] = []
 inventory_labels: list[dict[str, Any]] = []
+
+
+def export_state() -> dict[str, Any]:
+    return {
+        "products": products,
+        "orders": orders,
+        "stockEvents": stock_events,
+        "stockMovements": stock_movements,
+        "receipts": receipts,
+        "inventoryLabels": inventory_labels,
+    }
+
+
+def load_persisted_state() -> None:
+    state = load_state()
+    if state is None:
+        return
+
+    products[:] = state.get("products", [])
+    orders[:] = state.get("orders", [])
+    stock_events[:] = state.get("stockEvents", [])
+    stock_movements[:] = state.get("stockMovements", [])
+    receipts[:] = state.get("receipts", [])
+    inventory_labels[:] = state.get("inventoryLabels", [])
+
+
+def persist_state() -> None:
+    save_state(export_state())
 
 OUTBOUND_CHANNELS = {
     "taobao": "淘宝渠道",
@@ -99,99 +78,8 @@ LABEL_OUTBOUND_REASONS = {
 }
 
 
-def seed_inventory_labels() -> None:
-    inventory_labels.clear()
-    now = utc_now()
-    for product in products:
-        for index in range(product["centralStock"]):
-            inventory_labels.append(
-                {
-                    "labelCode": f"QR-{product['skuId']}-{index + 1:04d}",
-                    "skuId": product["skuId"],
-                    "productName": product["name"],
-                    "status": "in_stock",
-                    "receiptId": "INITIAL",
-                    "printedAt": now,
-                    "inboundAt": now,
-                    "outboundAt": "",
-                    "outboundReason": "",
-                    "operator": "系统初始化",
-                }
-            )
+load_persisted_state()
 
-
-seed_inventory_labels()
-
-
-def seed_demo_documents() -> None:
-    demo_specs = [
-        {
-            "receiptId": "RCV-DEMO-POT-001",
-            "skuId": "POT-001",
-            "productName": "手作陶瓷壶",
-            "qualifiedQuantity": 2,
-            "rejectedQuantity": 1,
-            "operator": "小梅雨",
-            "outboundOperator": "六一",
-            "outboundReason": "懂茶帝发货",
-        },
-        {
-            "receiptId": "RCV-DEMO-CUP-002",
-            "skuId": "CUP-002",
-            "productName": "配套品茗杯",
-            "qualifiedQuantity": 1,
-            "rejectedQuantity": 0,
-            "operator": "六一",
-            "outboundOperator": "小梅雨",
-            "outboundReason": "私域发货",
-        },
-    ]
-    now = utc_now()
-
-    for spec in demo_specs:
-        product = find_product(spec["skuId"])
-        if product is None:
-            continue
-
-        product["centralStock"] += spec["qualifiedQuantity"] - 1
-        receipt = {
-            "receiptId": spec["receiptId"],
-            "productName": product["name"],
-            "qualifiedQuantity": spec["qualifiedQuantity"],
-            "rejectedQuantity": spec["rejectedQuantity"],
-            "status": "inbound",
-            "inspector": spec["operator"],
-            "operator": spec["operator"],
-            "skuId": product["skuId"],
-            "labelCodes": [],
-            "createdAt": now,
-            "inboundAt": now,
-        }
-        receipts.insert(0, receipt)
-
-        for index in range(spec["qualifiedQuantity"]):
-            label_code = f"QR-{spec['receiptId']}-{index + 1:03d}"
-            label = {
-                "labelCode": label_code,
-                "skuId": product["skuId"],
-                "productName": product["name"],
-                "status": "in_stock",
-                "receiptId": spec["receiptId"],
-                "printedAt": now,
-                "inboundAt": now,
-                "outboundAt": "",
-                "outboundReason": "",
-                "operator": spec["operator"],
-            }
-            receipt["labelCodes"].append(label_code)
-            inventory_labels.insert(0, label)
-
-        outbound_label = find_label(receipt["labelCodes"][0])
-        if outbound_label:
-            outbound_label["status"] = "outbound"
-            outbound_label["outboundAt"] = now
-            outbound_label["outboundReason"] = spec["outboundReason"]
-            outbound_label["operator"] = spec["outboundOperator"]
 
 def list_platforms() -> list[dict[str, str]]:
     return [platform.__dict__ for platform in PLATFORMS]
@@ -296,6 +184,7 @@ def sell_product(
         operator="系统",
     )
 
+    persist_state()
     return order
 
 
@@ -333,7 +222,7 @@ def create_product(payload: dict[str, Any]) -> dict[str, Any]:
         "createdAt": now,
         "updatedAt": now,
     }
-    products.append(product)
+    products.insert(0, product)
 
     stock_events.insert(
         0,
@@ -361,6 +250,7 @@ def create_product(payload: dict[str, Any]) -> dict[str, Any]:
             reference_no=batch_no,
         )
 
+    persist_state()
     return serialize_product(product)
 
 
@@ -403,6 +293,7 @@ def update_product(sku_id: str, payload: dict[str, Any]) -> dict[str, Any]:
             "createdAt": utc_now(),
         },
     )
+    persist_state()
     return serialize_product(product)
 
 
@@ -429,6 +320,7 @@ def delete_product(sku_id: str) -> dict[str, Any]:
             "createdAt": utc_now(),
         },
     )
+    persist_state()
     return serialize_product(product)
 
 
@@ -476,6 +368,7 @@ def delete_inventory_label(label_code: str) -> dict[str, Any]:
             reference_no=label_code,
         )
 
+    persist_state()
     return {
         "label": label,
         "product": serialize_product(product) if product else None,
@@ -540,15 +433,15 @@ def inbound_stock(
         reference_no=purchase_order_no or product.get("batchNo", ""),
     )
 
+    persist_state()
     return serialize_product(product)
 
 
-def inspect_receipt(*, product_name: str, qualified_quantity: int, rejected_quantity: int = 0, inspector: str | None = None) -> dict[str, Any]:
+def inspect_receipt(*, product_name: str, qualified_quantity: int, inspector: str | None = None) -> dict[str, Any]:
     receipt = {
         "receiptId": f"RCV-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{random.randint(100, 999)}",
         "productName": product_name,
         "qualifiedQuantity": qualified_quantity,
-        "rejectedQuantity": rejected_quantity,
         "status": "inspected",
         "inspector": inspector or "质检员",
         "createdAt": utc_now(),
@@ -559,10 +452,11 @@ def inspect_receipt(*, product_name: str, qualified_quantity: int, rejected_quan
         {
             "id": str(uuid4()),
             "type": "inspection",
-            "message": f"{product_name} 到货核检完成：合格 {qualified_quantity} 个，不合格 {rejected_quantity} 个",
+            "message": f"{product_name} 到货核检完成：合格 {qualified_quantity} 个",
             "createdAt": utc_now(),
         },
     )
+    persist_state()
     return receipt
 
 
@@ -654,6 +548,7 @@ def inbound_with_labels(
         remark="每个合格品已贴二维码标签",
     )
 
+    persist_state()
     return {
         "receipt": receipt,
         "product": serialize_product(product),
@@ -709,6 +604,7 @@ def outbound_by_label(*, label_code: str, reason_id: str, operator: str | None =
         remark=remark or "装盒前剪掉标签",
     )
 
+    persist_state()
     return {
         "label": label,
         "product": serialize_product(product),
@@ -772,6 +668,7 @@ def outbound_stock(
         remark=remark or recipient or "",
     )
 
+    persist_state()
     return {
         "outboundNo": outbound_no,
         "product": serialize_product(product),
@@ -780,6 +677,9 @@ def outbound_stock(
 
 
 async def pull_platform_orders(platform_id: str | None = None) -> dict[str, Any]:
+    if not products:
+        raise BusinessError("暂无商品，无法拉取订单")
+
     platform_ids = [platform_id] if platform_id else [platform.id for platform in PLATFORMS]
     pulled_orders: list[dict[str, Any]] = []
     failures: list[dict[str, str]] = []
@@ -830,6 +730,7 @@ def ship_order(order_id: str) -> dict[str, Any]:
     order["trackingNo"] = f"YT{int(datetime.now(timezone.utc).timestamp() * 1000)}"
     order["updatedAt"] = utc_now()
 
+    persist_state()
     return order
 
 
@@ -846,23 +747,15 @@ async def get_logistics(order_id: str) -> dict[str, Any]:
     }
 
 
-def reset_demo() -> dict[str, Any]:
+def reset_system_data() -> dict[str, Any]:
     products.clear()
     products.extend(_initial_products())
     orders.clear()
+    stock_events.clear()
     stock_movements.clear()
     receipts.clear()
-    seed_inventory_labels()
-    seed_demo_documents()
-    stock_events.insert(
-        0,
-        {
-            "id": str(uuid4()),
-            "type": "reset",
-            "message": "已重置库存和订单",
-            "createdAt": utc_now(),
-        },
-    )
+    inventory_labels.clear()
+    persist_state()
     return get_dashboard()
 
 
@@ -939,9 +832,6 @@ def find_label(label_code: str) -> dict[str, Any] | None:
     return next((label for label in inventory_labels if label["labelCode"] == label_code), None)
 
 
-seed_demo_documents()
-
-
 def mark_labels_outbound_for_sale(*, sku_id: str, quantity: int, reason: str, operator: str) -> None:
     available_labels = [
         label for label in inventory_labels
@@ -975,7 +865,6 @@ def build_inbound_documents() -> list[dict[str, Any]]:
                 "documentId": receipt["receiptId"],
                 "productName": product["name"] if product else receipt.get("productName", ""),
                 "qualifiedQuantity": receipt.get("qualifiedQuantity", 0),
-                "rejectedQuantity": receipt.get("rejectedQuantity", 0),
                 "operator": receipt.get("operator") or receipt.get("inspector", "入库员"),
                 "inboundAt": receipt.get("inboundAt") or receipt.get("createdAt", ""),
                 "qrCodes": [label["labelCode"] for label in receipt_labels],

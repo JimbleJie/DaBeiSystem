@@ -380,6 +380,18 @@ button:disabled {
   font-size: 17px;
 }
 
+.product-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.product-title-row h3 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .product-field {
   display: grid;
   gap: 5px;
@@ -488,7 +500,13 @@ button:disabled {
   padding: 4px;
 }
 
-.label-delete-button {
+.label-actions {
+  display: grid;
+  gap: 6px;
+}
+
+.label-delete-button,
+.label-print-button {
   min-height: 34px;
   padding: 0 10px;
 }
@@ -634,6 +652,12 @@ td code {
   padding: 16px;
 }
 
+.inventory-modal-window {
+  width: min(980px, 100%);
+  max-height: min(760px, calc(100vh - 36px));
+  overflow: auto;
+}
+
 .modal-head {
   display: flex;
   align-items: center;
@@ -659,17 +683,21 @@ td code {
   gap: 16px;
 }
 
-.product-form label {
+.product-form label,
+.inventory-form label {
   display: grid;
   gap: 7px;
 }
 
-.product-form label span {
+.product-form label span,
+.inventory-form label span {
   color: var(--muted);
   font-size: 12px;
 }
 
-.product-form input {
+.product-form input,
+.inventory-form input,
+.inventory-form select {
   width: 100%;
   min-height: 40px;
   border: 1px solid var(--line);
@@ -680,9 +708,40 @@ td code {
   outline: none;
 }
 
-.product-form input:focus {
+.product-form input:focus,
+.inventory-form input:focus,
+.inventory-form select:focus {
   border-color: #9bcac1;
   box-shadow: 0 0 0 3px rgba(31, 118, 102, 0.12);
+}
+
+.inventory-form,
+.inventory-batch-rows {
+  display: grid;
+  gap: 12px;
+}
+
+.inventory-batch-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.3fr) minmax(120px, 0.7fr) minmax(120px, 0.7fr) auto;
+  align-items: end;
+  gap: 10px;
+  min-inline-size: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+  padding: 12px;
+}
+
+.inventory-batch-row legend {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 0 4px;
+}
+
+.inventory-row-remove {
+  min-width: 68px;
 }
 
 .form-actions {
@@ -757,8 +816,14 @@ th {
   .document-fields,
   .product-card,
   .product-management-card,
+  .inventory-batch-row,
   .label-card {
     grid-template-columns: 1fr;
+  }
+
+  .product-title-row {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .header-actions {
@@ -775,6 +840,12 @@ th {
 
   .label-card img {
     justify-self: start;
+  }
+
+  .label-actions,
+  .product-title-row button,
+  .inventory-row-remove {
+    width: 100%;
   }
 
   .form-actions {

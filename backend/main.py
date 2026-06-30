@@ -30,7 +30,7 @@ from .services import (
     outbound_by_label,
     outbound_stock,
     pull_platform_orders,
-    reset_demo,
+    reset_system_data,
     sell_product,
     ship_order,
     update_product,
@@ -167,7 +167,6 @@ async def inspect_inventory(payload: InspectReceiptRequest) -> dict:
         receipt = inspect_receipt(
             product_name=payload.productName,
             qualified_quantity=payload.qualifiedQuantity,
-            rejected_quantity=payload.rejectedQuantity,
             inspector=payload.inspector,
         )
         return {
@@ -275,4 +274,4 @@ async def ship(order_id: str) -> dict:
 
 @app.post("/api/inventory/reset")
 async def reset_inventory(_: EmptyRequest | None = None) -> dict:
-    return reset_demo()
+    return reset_system_data()

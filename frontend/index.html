@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>库存管理系统</title>
-  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./styles.css?v=20260630-inventory-tools">
 </head>
 <body>
   <main class="app">
@@ -80,8 +80,11 @@
             <div class="inventory-engine-grid" id="inventoryEngineCards"></div>
 
             <div class="panel-head inventory-list-head">
-              <h2>实时库存引擎</h2>
-              <span>产品库存、商品编码和单件标签二维码</span>
+              <div>
+                <h2>实时库存引擎</h2>
+                <span>产品库存、商品编码和单件标签二维码</span>
+              </div>
+              <button id="openInventoryModalButton" type="button">创建库存</button>
             </div>
             <div class="list-toolbar" data-list-toolbar="inventory">
               <label class="search-control">
@@ -196,7 +199,24 @@
     </section>
   </div>
 
+  <div class="modal-backdrop" id="inventoryModal" hidden>
+    <section class="modal-window inventory-modal-window" role="dialog" aria-modal="true" aria-labelledby="inventoryModalTitle">
+      <div class="modal-head">
+        <h2 id="inventoryModalTitle">创建库存</h2>
+        <button class="ghost-button icon-button" id="closeInventoryModalButton" type="button" aria-label="关闭">×</button>
+      </div>
+      <form id="inventoryForm" class="inventory-form">
+        <div id="inventoryBatchRows" class="inventory-batch-rows"></div>
+        <button class="ghost-button" id="addInventoryRowButton" type="button">添加一行</button>
+        <div class="form-actions">
+          <button class="ghost-button" id="cancelInventoryButton" type="button">取消</button>
+          <button id="submitInventoryButton" type="submit">创建库存</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
   <script src="./config.js"></script>
-  <script src="./app.js"></script>
+  <script src="./app.js?v=20260630-inventory-tools"></script>
 </body>
 </html>

@@ -1,17 +1,22 @@
 package com.dabeisys.inventory;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.Editable;
 import android.text.InputType;
+import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.ArrayAdapter;
+import android.widget.AutoCompleteTextView;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.Filter;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Spinner;
@@ -33,6 +38,7 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -182,9 +188,26 @@ public class MainActivity extends Activity {
         page.addView(backButton());
 
         page.addView(label("选择产品"));
-        Spinner productSpinner = spinner(productNames());
-        page.addView(productSpinner);
-        page.addView(hintText("如果没有查到产品，请到后台添加"));
+        AutoCompleteTextView productInput = productSearchInput();
+        final ProductOption[] selectedProduct = {null};
+        productInput.setOnItemClickListener((parent, view, position, id) ->
+                selectedProduct[0] = resolveProductSelection(parent.getItemAtPosition(position).toString()));
+        productInput.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence text, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence text, int start, int before, int count) {
+            }
+
+            @Override
+            public void afterTextChanged(Editable editable) {
+                selectedProduct[0] = resolveProductSelection(editable.toString());
+            }
+        });
+        page.addView(productInput);
+        page.addView(hintText("输入产品名称或 SKU 可模糊搜索；如果没有查到产品，请到后台添加"));
 
         page.addView(label("合格数量："));
         EditText qualifiedInput = input("例如 10");
@@ -204,9 +227,22 @@ public class MainActivity extends Activity {
                 return;
             }
 
-            ProductOption selectedProduct = products.get(productSpinner.getSelectedItemPosition());
-            String productName = selectedProduct.name;
-            String skuId = selectedProduct.skuId;
+            ProductOption product = selectedProduct[0];
+            if (product == null) {
+                List<String> matches = productSearchLabels(productInput.getText().toString());
+                if (matches.size() == 1) {
+                    product = resolveProductSelection(matches.get(0));
+                }
+            }
+            if (product == null) {
+                toast("请搜索并选择一个产品");
+                productInput.requestFocus();
+                productInput.showDropDown();
+                return;
+            }
+
+            String productName = product.name;
+            String skuId = product.skuId;
             int qualified = parseInt(qualifiedInput.getText().toString());
             String operator = operatorSpinner.getSelectedItem().toString();
 
@@ -219,7 +255,6 @@ public class MainActivity extends Activity {
                 JSONObject inspectBody = new JSONObject()
                         .put("productName", productName)
                         .put("qualifiedQuantity", qualified)
-                        .put("rejectedQuantity", 0)
                         .put("inspector", operator);
                 request("POST", "/inventory/inspect", inspectBody, inspectJson -> {
                     String receiptId = inspectJson.optJSONObject("receipt").optString("receiptId");
@@ -298,7 +333,7 @@ public class MainActivity extends Activity {
                     result.setText(formatOutboundResult(json));
                     toast("出库成功，库存已同步");
                     refreshDashboard(false);
-                }, error -> toast("出库失败：" + error));
+                }, error -> handleOutboundError(error));
             } catch (Exception error) {
                 toast("请求参数错误：" + error.getMessage());
             }
@@ -503,6 +538,17 @@ public class MainActivity extends Activity {
                 + "状态：已剪标";
     }
 
+    private void handleOutboundError(String error) {
+        if (error != null && (error.contains("已出库") || error.contains("重复出库"))) {
+            new AlertDialog.Builder(this)
+                    .setMessage("已出库，请勿重复操作")
+                    .setPositiveButton("知道了", null)
+                    .show();
+            return;
+        }
+        toast("出库失败：" + error);
+    }
+
     private List<String> productNames() {
         List<String> names = new ArrayList<>();
         for (ProductOption product : products) {
@@ -512,6 +558,45 @@ public class MainActivity extends Activity {
             names.add("暂无产品");
         }
         return names;
+    }
+
+    private List<String> productSearchLabels(String query) {
+        String normalizedQuery = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
+        List<String> labels = new ArrayList<>();
+        for (ProductOption product : products) {
+            String label = formatProductOption(product);
+            if (normalizedQuery.isEmpty()
+                    || label.toLowerCase(Locale.ROOT).contains(normalizedQuery)
+                    || product.name.toLowerCase(Locale.ROOT).contains(normalizedQuery)
+                    || product.skuId.toLowerCase(Locale.ROOT).contains(normalizedQuery)) {
+                labels.add(label);
+            }
+        }
+        if (labels.isEmpty()) {
+            labels.add("暂无匹配产品");
+        }
+        return labels;
+    }
+
+    private ProductOption resolveProductSelection(String text) {
+        if (text == null) {
+            return null;
+        }
+        String normalized = text.trim();
+        for (ProductOption product : products) {
+            if (normalized.equals(formatProductOption(product))
+                    || normalized.equals(product.name)
+                    || normalized.equals(product.skuId)
+                    || normalized.startsWith(product.name + " · ")
+                    || normalized.contains(" · " + product.skuId + " · ")) {
+                return product;
+            }
+        }
+        return null;
+    }
+
+    private String formatProductOption(ProductOption product) {
+        return product.name + " · " + product.skuId + " · " + product.stock + "件";
     }
 
     private List<String> labelNames() {
@@ -618,6 +703,77 @@ public class MainActivity extends Activity {
         input.setBackgroundColor(Color.WHITE);
         input.setLayoutParams(blockParams());
         return input;
+    }
+
+    private AutoCompleteTextView productSearchInput() {
+        AutoCompleteTextView input = new AutoCompleteTextView(this);
+        input.setHint("输入产品名称或 SKU 搜索");
+        input.setSingleLine(true);
+        input.setTextSize(16);
+        input.setPadding(dp(12), 0, dp(12), 0);
+        input.setMinHeight(dp(48));
+        input.setThreshold(0);
+        input.setBackgroundColor(Color.WHITE);
+        input.setLayoutParams(blockParams());
+
+        ArrayAdapter<String> adapter = productSearchAdapter();
+        input.setAdapter(adapter);
+        input.setOnClickListener(view -> input.showDropDown());
+        input.setOnFocusChangeListener((view, hasFocus) -> {
+            if (hasFocus) {
+                input.showDropDown();
+            }
+        });
+        input.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence text, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence text, int start, int before, int count) {
+            }
+
+            @Override
+            public void afterTextChanged(Editable editable) {
+                adapter.clear();
+                adapter.addAll(productSearchLabels(editable.toString()));
+                adapter.notifyDataSetChanged();
+            }
+        });
+        return input;
+    }
+
+    private ArrayAdapter<String> productSearchAdapter() {
+        return new ArrayAdapter<String>(
+                this,
+                android.R.layout.simple_dropdown_item_1line,
+                productSearchLabels("")
+        ) {
+            @Override
+            public Filter getFilter() {
+                return new Filter() {
+                    @Override
+                    protected FilterResults performFiltering(CharSequence constraint) {
+                        List<String> matches = productSearchLabels(constraint == null ? "" : constraint.toString());
+                        FilterResults results = new FilterResults();
+                        results.values = matches;
+                        results.count = matches.size();
+                        return results;
+                    }
+
+                    @Override
+                    protected void publishResults(CharSequence constraint, FilterResults results) {
+                        clear();
+                        if (results.values instanceof List<?>) {
+                            for (Object value : (List<?>) results.values) {
+                                add(String.valueOf(value));
+                            }
+                        }
+                        notifyDataSetChanged();
+                    }
+                };
+            }
+        };
     }
 
     private Spinner spinner(List<String> values) {
