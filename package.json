@@ -1,0 +1,11 @@
+{
+  "name": "live-commerce-sync-system",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "backend": "node scripts/start-backend.mjs",
+    "frontend": "node frontend/server.js",
+    "check": "python3 -m py_compile backend/*.py && node --check frontend/server.js && node --check frontend/app.js"
+  }
+}

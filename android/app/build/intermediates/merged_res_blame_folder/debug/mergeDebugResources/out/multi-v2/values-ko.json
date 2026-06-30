@@ -1,0 +1,36 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.dabeisys.inventory.app-mergeDebugResources-8:/values-ko/values-ko.xml",
+            "map": [
+                {
+                    "source": "/Users/yanjj.vendor/.gradle/caches/9.1.0/transforms/56e21ded8b320b1bb67660f991d8aabc/transformed/core-1.13.1/res/values-ko/values-ko.xml",
+                    "from": {
+                        "startLines": "2,3,4,5,6,7,8,9",
+                        "startColumns": "4,4,4,4,4,4,4,4",
+                        "startOffsets": "55,147,247,341,438,534,632,732",
+                        "endColumns": "91,99,93,96,95,97,99,100",
+                        "endOffsets": "142,242,336,433,529,627,727,828"
+                    }
+                },
+                {
+                    "source": "/Users/yanjj.vendor/.gradle/caches/9.1.0/transforms/fb87af243dbdaf13799d8c298f9473d9/transformed/zxing-android-embedded-4.3.0/res/values-ko/values-ko.xml",
+                    "from": {
+                        "startLines": "2,3,4,5",
+                        "startColumns": "4,4,4,4",
+                        "startOffsets": "55,106,153,260",
+                        "endColumns": "50,46,106,71",
+                        "endOffsets": "101,148,255,327"
+                    },
+                    "to": {
+                        "startLines": "10,11,12,13",
+                        "startColumns": "4,4,4,4",
+                        "startOffsets": "833,884,931,1038",
+                        "endColumns": "50,46,106,71",
+                        "endOffsets": "879,926,1033,1105"
+                    }
+                }
+            ]
+        }
+    ]
+}

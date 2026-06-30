@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>库存管理系统</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="app">
+    <header class="app-header">
+      <div>
+        <h1>库存管理系统</h1>
+        <p>统一展示库存、入库单和出库单。</p>
+      </div>
+      <div class="header-actions">
+        <span class="header-status" id="messageText">系统就绪</span>
+        <button id="refreshButton" type="button">刷新</button>
+      </div>
+    </header>
+
+    <section class="app-body">
+      <nav class="tabs" aria-label="模块导航">
+        <button class="tab-button active" type="button" data-view-target="inventoryView" data-route="/inventory">库存管理</button>
+        <button class="tab-button" type="button" data-view-target="inboundDocumentsView" data-route="/inbound-documents">入库单管理</button>
+        <button class="tab-button" type="button" data-view-target="outboundDocumentsView" data-route="/outbound-documents">出库单管理</button>
+        <button class="tab-button" type="button" data-view-target="productsView" data-route="/products">产品管理</button>
+      </nav>
+
+      <section class="view-stack">
+        <section class="view" id="productsView" aria-label="产品管理">
+          <section class="panel product-management-panel">
+            <div class="panel-head">
+              <div>
+                <h2>产品管理</h2>
+                <span>创建产品并查看已有产品数量</span>
+              </div>
+              <button id="openProductModalButton" type="button">创建产品</button>
+            </div>
+
+            <div class="product-count-card">
+              <span>产品数量</span>
+              <strong id="productCount">0</strong>
+            </div>
+
+            <div class="list-toolbar" data-list-toolbar="products">
+              <label class="search-control">
+                <span>搜索</span>
+                <input id="productsSearch" type="search" placeholder="搜索任意字段">
+              </label>
+              <label class="page-size-control">
+                <span>每页</span>
+                <select id="productsPageSize" aria-label="产品每页展示数量">
+                  <option value="10">10</option>
+                  <option value="15">15</option>
+                  <option value="20">20</option>
+                  <option value="25">25</option>
+                  <option value="30">30</option>
+                  <option value="35">35</option>
+                  <option value="40">40</option>
+                  <option value="45">45</option>
+                  <option value="50">50</option>
+                </select>
+              </label>
+            </div>
+            <div id="productList" class="product-management-list"></div>
+            <div class="pagination" data-list-pagination="products"></div>
+          </section>
+        </section>
+
+        <section class="view active" id="inventoryView" aria-label="库存管理">
+          <section class="panel inventory-panel inventory-system-panel">
+            <div class="panel-head">
+              <div>
+                <h2>库存数据看板</h2>
+                <span>仅展示库存商品和编码二维码</span>
+              </div>
+            </div>
+
+            <div class="inventory-engine-grid" id="inventoryEngineCards"></div>
+
+            <div class="panel-head inventory-list-head">
+              <h2>实时库存引擎</h2>
+              <span>产品库存、商品编码和单件标签二维码</span>
+            </div>
+            <div class="list-toolbar" data-list-toolbar="inventory">
+              <label class="search-control">
+                <span>搜索</span>
+                <input id="inventorySearch" type="search" placeholder="搜索任意字段">
+              </label>
+              <label class="page-size-control">
+                <span>每页</span>
+                <select id="inventoryPageSize" aria-label="库存每页展示数量">
+                  <option value="10">10</option>
+                  <option value="15">15</option>
+                  <option value="20">20</option>
+                  <option value="25">25</option>
+                  <option value="30">30</option>
+                  <option value="35">35</option>
+                  <option value="40">40</option>
+                  <option value="45">45</option>
+                  <option value="50">50</option>
+                </select>
+              </label>
+            </div>
+            <div id="inventoryList" class="inventory-list"></div>
+            <div class="pagination" data-list-pagination="inventory"></div>
+          </section>
+        </section>
+
+        <section class="view" id="inboundDocumentsView" aria-label="入库单管理">
+          <section class="panel document-panel">
+            <div class="panel-head">
+              <div>
+                <h2>入库单管理</h2>
+                <span>每次扫码入库形成一张入库单，记录核检数量和全部二维码</span>
+              </div>
+            </div>
+            <div class="list-toolbar" data-list-toolbar="inboundDocuments">
+              <label class="search-control">
+                <span>搜索</span>
+                <input id="inboundDocumentsSearch" type="search" placeholder="搜索任意字段">
+              </label>
+              <label class="page-size-control">
+                <span>每页</span>
+                <select id="inboundDocumentsPageSize" aria-label="入库单每页展示数量">
+                  <option value="10">10</option>
+                  <option value="15">15</option>
+                  <option value="20">20</option>
+                  <option value="25">25</option>
+                  <option value="30">30</option>
+                  <option value="35">35</option>
+                  <option value="40">40</option>
+                  <option value="45">45</option>
+                  <option value="50">50</option>
+                </select>
+              </label>
+            </div>
+            <div id="inboundDocumentList" class="document-list"></div>
+            <div class="pagination" data-list-pagination="inboundDocuments"></div>
+          </section>
+        </section>
+
+        <section class="view" id="outboundDocumentsView" aria-label="出库单管理">
+          <section class="panel document-panel">
+            <div class="panel-head">
+              <div>
+                <h2>出库单管理</h2>
+                <span>每次扫码出库形成一张出库单，记录渠道、产品码和出库人</span>
+              </div>
+            </div>
+            <div class="list-toolbar" data-list-toolbar="outboundDocuments">
+              <label class="search-control">
+                <span>搜索</span>
+                <input id="outboundDocumentsSearch" type="search" placeholder="搜索任意字段">
+              </label>
+              <label class="page-size-control">
+                <span>每页</span>
+                <select id="outboundDocumentsPageSize" aria-label="出库单每页展示数量">
+                  <option value="10">10</option>
+                  <option value="15">15</option>
+                  <option value="20">20</option>
+                  <option value="25">25</option>
+                  <option value="30">30</option>
+                  <option value="35">35</option>
+                  <option value="40">40</option>
+                  <option value="45">45</option>
+                  <option value="50">50</option>
+                </select>
+              </label>
+            </div>
+            <div id="outboundDocumentList" class="document-list"></div>
+            <div class="pagination" data-list-pagination="outboundDocuments"></div>
+          </section>
+        </section>
+      </section>
+    </section>
+  </main>
+
+  <div class="modal-backdrop" id="productModal" hidden>
+    <section class="modal-window" role="dialog" aria-modal="true" aria-labelledby="productModalTitle">
+      <div class="modal-head">
+        <h2 id="productModalTitle">创建产品</h2>
+        <button class="ghost-button icon-button" id="closeProductModalButton" type="button" aria-label="关闭">×</button>
+      </div>
+      <form id="productForm" class="product-form">
+        <label>
+          <span>产品名称</span>
+          <input id="productNameInput" name="name" type="text" autocomplete="off" required placeholder="请输入产品名称">
+        </label>
+        <div class="form-actions">
+          <button class="ghost-button" id="cancelProductButton" type="button">取消</button>
+          <button id="submitProductButton" type="submit">创建</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <script src="./config.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>

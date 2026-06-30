@@ -1,0 +1,10 @@
+{
+  "host": "0.0.0.0",
+  "backend": {
+    "port": 4000,
+    "apiPath": "/api"
+  },
+  "frontend": {
+    "port": 5173
+  }
+}
