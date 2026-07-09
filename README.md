@@ -84,7 +84,7 @@ INVENTORY_BACKUP_RETENTION_COUNT=30
 
 后台已预留 Windows 打印 SDK 接口，用于打印“二维码 + 产品名称”的单件标签。前端库存管理中的“打印”和“全部打印”会调用后端打印接口；当前不是 Windows 打印环境时，会自动打开浏览器打印预览。
 
-默认 SDK 目录：
+打印 SDK 运行时文件已内置在：
 
 ```text
 printer-sdk/printSDK/DDPrintSDK.dll
@@ -138,7 +138,7 @@ data/
 backups/
   inventory_*.sqlite SQLite 备份文件
 printer-sdk/
-  printSDK/       Windows 打印 SDK 文件放置目录
+  printSDK/       Windows 打印 SDK 运行时文件
 backend/
   main.py         FastAPI 路由入口
   backup.py       SQLite 手动备份和定期备份

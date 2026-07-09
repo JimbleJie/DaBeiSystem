@@ -1,6 +1,6 @@
 # Windows 打印 SDK 放置说明
 
-将厂商 Windows SDK 中的 `printSDK` 目录复制到这里：
+项目已内置厂商 Windows 打印 SDK 的运行时文件：
 
 ```text
 printer-sdk/
@@ -8,6 +8,8 @@ printer-sdk/
     DDPrintSDK.dll
     msvcp120.dll
     msvcr120.dll
+    mfc120u.dll
+    mfcm120u.dll
 ```
 
 当前后端默认从 `printer-sdk/printSDK/DDPrintSDK.dll` 加载打印 SDK。
