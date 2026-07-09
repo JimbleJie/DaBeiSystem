@@ -6,10 +6,10 @@ import { dirname, join } from "node:path";
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const config = JSON.parse(readFileSync(join(root, "config/runtime.json"), "utf8"));
 
-function hasUvicorn(pythonCommand) {
+function hasUvicorn(candidate) {
   const result = spawnSync(
-    pythonCommand,
-    ["-c", "import uvicorn"],
+    candidate.command,
+    [...candidate.args, "-c", "import uvicorn"],
     {
       cwd: root,
       stdio: "ignore"
@@ -19,14 +19,19 @@ function hasUvicorn(pythonCommand) {
 }
 
 function resolvePython() {
-  const venvPython = join(root, ".venv/bin/python");
+  const unixVenvPython = join(root, ".venv", "bin", "python");
+  const windowsVenvPython = join(root, ".venv", "Scripts", "python.exe");
   const candidates = [
-    process.env.PYTHON,
-    existsSync(venvPython) ? venvPython : null,
-    "python3.13",
-    "python3.12",
-    "python3.11",
-    "python3"
+    process.env.PYTHON ? { command: process.env.PYTHON, args: [] } : null,
+    existsSync(windowsVenvPython) ? { command: windowsVenvPython, args: [] } : null,
+    existsSync(unixVenvPython) ? { command: unixVenvPython, args: [] } : null,
+    { command: "py", args: ["-3.12-32"] },
+    { command: "py", args: ["-3.11-32"] },
+    { command: "python", args: [] },
+    { command: "python3.13", args: [] },
+    { command: "python3.12", args: [] },
+    { command: "python3.11", args: [] },
+    { command: "python3", args: [] }
   ].filter(Boolean);
 
   for (const candidate of candidates) {
@@ -36,8 +41,10 @@ function resolvePython() {
   }
 
   console.error("未找到已安装 uvicorn 的 Python。请先执行：");
-  console.error("  python3 -m venv .venv");
-  console.error("  ./.venv/bin/pip install -r requirements.txt");
+  console.error("  Windows: py -3.12-32 -m venv .venv");
+  console.error("  Windows: .\\.venv\\Scripts\\python.exe -m pip install -r requirements.txt");
+  console.error("  macOS/Linux: python3 -m venv .venv");
+  console.error("  macOS/Linux: ./.venv/bin/python -m pip install -r requirements.txt");
   process.exit(1);
 }
 
@@ -58,8 +65,8 @@ if (reloadEnabled) {
 }
 
 const child = spawn(
-  python,
-  uvicornArgs,
+  python.command,
+  [...python.args, ...uvicornArgs],
   {
     cwd: root,
     stdio: "inherit"
