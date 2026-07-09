@@ -1,6 +1,22 @@
+import sqlite3
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
+from .backup import (
+    create_database_backup,
+    get_backup_status,
+    list_database_backups,
+    start_backup_scheduler,
+    stop_backup_scheduler,
+)
+from .printer import (
+    PrinterError,
+    PrinterUnavailable,
+    get_printer_status,
+    print_labels,
+)
 from .schemas import (
     CreateProductRequest,
     EmptyRequest,
@@ -9,6 +25,7 @@ from .schemas import (
     LabelInboundRequest,
     LabelOutboundRequest,
     OutboundStockRequest,
+    PrintLabelsRequest,
     PullOrdersRequest,
     SimulateOrderRequest,
     UpdateProductRequest,
@@ -21,8 +38,10 @@ from .services import (
     get_dashboard,
     get_inventory_system,
     get_logistics,
+    get_print_label,
     inbound_with_labels,
     inbound_stock,
+    list_print_labels_for_sku,
     inspect_receipt,
     list_orders,
     list_platforms,
@@ -36,7 +55,17 @@ from .services import (
     update_product,
 )
 
-app = FastAPI(title="直播电商订单物流库存同步系统", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    start_backup_scheduler()
+    try:
+        yield
+    finally:
+        stop_backup_scheduler()
+
+
+app = FastAPI(title="直播电商订单物流库存同步系统", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -53,6 +82,86 @@ async def health() -> dict[str, str]:
         "status": "ok",
         "service": "live-commerce-sync-system",
     }
+
+
+@app.get("/api/backups")
+async def backups() -> dict:
+    return {
+        "backups": list_database_backups(),
+        "status": get_backup_status(),
+    }
+
+
+@app.get("/api/backups/status")
+async def backup_status() -> dict:
+    return get_backup_status()
+
+
+@app.get("/api/printing/status")
+async def printing_status() -> dict:
+    return get_printer_status()
+
+
+@app.post("/api/printing/labels", status_code=201)
+async def print_inventory_labels(payload: PrintLabelsRequest) -> dict:
+    try:
+        result = print_labels(
+            [item.model_dump() for item in payload.labels],
+            copies=payload.copies,
+        )
+        return {
+            "message": "打印任务已发送",
+            **result,
+        }
+    except PrinterUnavailable as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    except PrinterError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.post("/api/printing/labels/{label_code}", status_code=201)
+async def print_inventory_label(label_code: str) -> dict:
+    try:
+        result = print_labels([get_print_label(label_code)], copies=1)
+        return {
+            "message": "打印任务已发送",
+            **result,
+        }
+    except BusinessError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except PrinterUnavailable as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    except PrinterError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.post("/api/printing/products/{sku_id}", status_code=201)
+async def print_product_inventory_labels(sku_id: str) -> dict:
+    try:
+        labels = list_print_labels_for_sku(sku_id)
+        result = print_labels(labels, copies=1)
+        return {
+            "message": "打印任务已发送",
+            **result,
+        }
+    except BusinessError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except PrinterUnavailable as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    except PrinterError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.post("/api/backups", status_code=201)
+async def create_backup() -> dict:
+    try:
+        backup = create_database_backup("manual")
+        return {
+            "backup": backup,
+            "status": get_backup_status(),
+        }
+    except (OSError, sqlite3.Error) as error:
+        raise HTTPException(status_code=500, detail=f"备份失败：{error}") from error
 
 
 @app.get("/api/dashboard")

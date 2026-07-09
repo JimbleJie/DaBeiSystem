@@ -111,6 +111,16 @@ button:disabled {
   font-size: 13px;
 }
 
+.backup-status {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+  color: var(--muted);
+  padding: 9px 11px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
 .app-body {
   display: grid;
   grid-template-columns: 168px minmax(0, 1fr);

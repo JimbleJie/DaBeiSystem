@@ -78,5 +78,15 @@ class LabelOutboundRequest(BaseModel):
     remark: str | None = None
 
 
+class PrintLabelItem(BaseModel):
+    labelCode: str
+    productName: str
+
+
+class PrintLabelsRequest(BaseModel):
+    labels: list[PrintLabelItem]
+    copies: int = Field(default=1, ge=1, le=99)
+
+
 class EmptyRequest(BaseModel):
     pass

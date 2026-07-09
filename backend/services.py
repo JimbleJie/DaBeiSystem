@@ -832,6 +832,34 @@ def find_label(label_code: str) -> dict[str, Any] | None:
     return next((label for label in inventory_labels if label["labelCode"] == label_code), None)
 
 
+def get_print_label(label_code: str) -> dict[str, str]:
+    label = find_label(label_code)
+    if label is None:
+        raise BusinessError("标签不存在")
+    return {
+        "labelCode": label["labelCode"],
+        "productName": label["productName"],
+    }
+
+
+def list_print_labels_for_sku(sku_id: str) -> list[dict[str, str]]:
+    product = find_product(sku_id)
+    if product is None:
+        raise BusinessError("商品不存在")
+
+    labels = [
+        {
+            "labelCode": label["labelCode"],
+            "productName": label["productName"],
+        }
+        for label in inventory_labels
+        if label["skuId"] == sku_id
+    ]
+    if not labels:
+        raise BusinessError("暂无可打印标签")
+    return labels
+
+
 def mark_labels_outbound_for_sale(*, sku_id: str, quantity: int, reason: str, operator: str) -> None:
     available_labels = [
         label for label in inventory_labels

@@ -56,6 +56,76 @@ data/inventory.sqlite
 - `stock_movements`
 - `stock_events`
 
+## 定期备份
+
+后端启动后会自动定期备份 SQLite 数据库，备份文件位于：
+
+```text
+backups/
+```
+
+默认每 24 小时备份一次，最多保留最近 30 份。前端顶部提供“立即备份”按钮，也可以直接调用：
+
+```bash
+curl -X POST http://127.0.0.1:4000/api/backups
+curl http://127.0.0.1:4000/api/backups
+```
+
+如需调整频率和保留数量，可在启动后端前设置环境变量：
+
+```bash
+INVENTORY_BACKUP_INTERVAL_SECONDS=86400
+INVENTORY_BACKUP_RETENTION_COUNT=30
+```
+
+后期 Git 上传时，建议同时提交 `data/inventory.sqlite` 和 `backups/` 中需要保留的备份文件。
+
+## 打印 SDK
+
+后台已预留 Windows 打印 SDK 接口，用于打印“二维码 + 产品名称”的单件标签。前端库存管理中的“打印”和“全部打印”会调用后端打印接口；当前不是 Windows 打印环境时，会自动打开浏览器打印预览。
+
+默认 SDK 目录：
+
+```text
+printer-sdk/printSDK/DDPrintSDK.dll
+```
+
+也可以通过环境变量指定 SDK 目录：
+
+```bash
+PRINT_SDK_DIR="D:\\inventory-system\\printer-sdk\\printSDK"
+```
+
+默认打印模板：
+
+- 标签尺寸：`30mm x 40mm`
+- 内容：上方二维码，下方产品名称
+- 默认 VID/PID：`10473 / 672`
+
+可调整的环境变量：
+
+```bash
+PRINT_LABEL_WIDTH_MM=30
+PRINT_LABEL_HEIGHT_MM=40
+PRINT_LABEL_QR_X=45
+PRINT_LABEL_QR_Y=18
+PRINT_LABEL_QR_CELL_WIDTH=6
+PRINT_LABEL_TEXT_Y=225
+PRINT_LABEL_TEXT_SCALE_X=2
+PRINT_LABEL_TEXT_SCALE_Y=2
+PRINT_PRINTER_VID=10473
+PRINT_PRINTER_PID=672
+```
+
+后端接口：
+
+```text
+GET  /api/printing/status
+POST /api/printing/labels/{label_code}
+POST /api/printing/products/{sku_id}
+POST /api/printing/labels
+```
+
 ## 目录
 
 ```text
@@ -65,8 +135,14 @@ config/
   runtime.json    前后端主机、端口、API 路径配置
 data/
   inventory.sqlite SQLite 数据文件
+backups/
+  inventory_*.sqlite SQLite 备份文件
+printer-sdk/
+  printSDK/       Windows 打印 SDK 文件放置目录
 backend/
   main.py         FastAPI 路由入口
+  backup.py       SQLite 手动备份和定期备份
+  printer.py      Windows 打印 SDK 封装
   services.py     订单、库存、物流业务逻辑
   adapters.py     模拟淘宝/抖音/小红书/微信电商/私域渠道 API
   schemas.py      请求参数模型

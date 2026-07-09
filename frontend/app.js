@@ -5,6 +5,7 @@ const state = {
   inventoryLabels: [],
   inboundDocuments: [],
   outboundDocuments: [],
+  backupStatus: null,
   editingProductSkuId: null,
   inventoryDraftRows: [],
   inventorySystem: {
@@ -66,6 +67,8 @@ const elements = {
   outboundDocumentsSearch: document.querySelector("#outboundDocumentsSearch"),
   outboundDocumentsPageSize: document.querySelector("#outboundDocumentsPageSize"),
   messageText: document.querySelector("#messageText"),
+  backupStatusText: document.querySelector("#backupStatusText"),
+  backupButton: document.querySelector("#backupButton"),
   refreshButton: document.querySelector("#refreshButton")
 };
 
@@ -75,11 +78,30 @@ async function fetchDashboard() {
   render();
 }
 
+async function fetchBackupStatus() {
+  state.backupStatus = await request("/backups/status");
+  renderBackupStatus();
+}
+
 function render() {
   renderProducts();
   renderInventorySystem();
   renderInventory();
   renderDocuments();
+  renderBackupStatus();
+}
+
+function renderBackupStatus() {
+  const status = state.backupStatus;
+  if (!status) {
+    elements.backupStatusText.textContent = "备份状态加载中";
+    return;
+  }
+
+  const latestBackup = status.latestBackup;
+  elements.backupStatusText.textContent = latestBackup
+    ? `最近备份：${formatTime(latestBackup.createdAt)}`
+    : "暂无备份";
 }
 
 function renderProducts() {
@@ -542,23 +564,56 @@ async function deleteLabel(labelCode) {
   }
 }
 
-function printProductLabels(skuId) {
+async function createManualBackup() {
+  elements.backupButton.disabled = true;
+  setMessage("正在备份数据库");
+  try {
+    const result = await request("/backups", { method: "POST" });
+    state.backupStatus = result.status;
+    renderBackupStatus();
+    setMessage(`备份完成：${result.backup.filename}`);
+  } catch (error) {
+    setMessage(error.message);
+  } finally {
+    elements.backupButton.disabled = false;
+  }
+}
+
+async function printProductLabels(skuId) {
   const product = state.products.find((item) => item.skuId === skuId);
   const labels = state.inventoryLabels.filter((label) => label.skuId === skuId);
   if (!product || labels.length === 0) {
     setMessage("暂无可打印标签");
     return;
   }
-  openPrintWindow(`${product.name} 单件标签`, labels);
+  await sendLabelsToPrinter({
+    title: `${product.name} 单件标签`,
+    labels,
+    path: `/printing/products/${encodeURIComponent(skuId)}`
+  });
 }
 
-function printSingleLabel(labelCode) {
+async function printSingleLabel(labelCode) {
   const label = state.inventoryLabels.find((item) => item.labelCode === labelCode);
   if (!label) {
     setMessage("标签不存在");
     return;
   }
-  openPrintWindow(`${label.productName} ${label.labelCode}`, [label]);
+  await sendLabelsToPrinter({
+    title: `${label.productName} ${label.labelCode}`,
+    labels: [label],
+    path: `/printing/labels/${encodeURIComponent(labelCode)}`
+  });
+}
+
+async function sendLabelsToPrinter({ title, labels, path }) {
+  try {
+    const result = await request(path, { method: "POST" });
+    setMessage(`打印任务已发送，共 ${result.printed} 个标签`);
+  } catch (error) {
+    setMessage(`打印服务未连接，已打开预览：${error.message}`);
+    openPrintWindow(title, labels);
+  }
 }
 
 function openPrintWindow(title, labels) {
@@ -577,15 +632,20 @@ function openPrintWindow(title, labels) {
       <title>${safeTitle}</title>
       <style>
         * { box-sizing: border-box; }
-        body { margin: 0; padding: 18px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif; color: #17202a; }
+        body { margin: 0; padding: 18px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif; color: #111; }
         h1 { margin: 0 0 16px; font-size: 20px; }
-        .label-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
-        .label-card { border: 1px solid #dfe5ec; border-radius: 8px; padding: 12px; text-align: center; break-inside: avoid; }
-        .label-card img { width: 132px; height: 132px; }
-        .label-card strong, .label-card span { display: block; overflow-wrap: anywhere; }
-        .label-card strong { margin-top: 8px; font-size: 13px; }
-        .label-card span { margin-top: 5px; color: #657282; font-size: 12px; }
-        @media print { body { padding: 0; } button { display: none; } }
+        .label-grid { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
+        .label-card { width: 30mm; height: 40mm; border: 1px solid #dfe5ec; border-radius: 2mm; padding: 2mm; text-align: center; break-inside: avoid; page-break-inside: avoid; }
+        .label-card img { display: block; width: 22mm; height: 22mm; margin: 2mm auto 1.8mm; image-rendering: pixelated; }
+        .label-card strong { display: none; }
+        .label-card span { display: block; color: #111; font-size: 14pt; font-weight: 600; line-height: 1.15; overflow-wrap: anywhere; }
+        @page { size: 30mm 40mm; margin: 0; }
+        @media print {
+          body { padding: 0; }
+          h1 { display: none; }
+          .label-grid { display: block; }
+          .label-card { border: 0; page-break-after: always; }
+        }
       </style>
     </head>
     <body>
@@ -695,8 +755,11 @@ document.querySelectorAll("[data-view-target]").forEach((button) => {
 });
 
 elements.refreshButton.addEventListener("click", () => {
-  fetchDashboard().then(() => setMessage("已刷新")).catch((error) => setMessage(error.message));
+  Promise.all([fetchDashboard(), fetchBackupStatus()])
+    .then(() => setMessage("已刷新"))
+    .catch((error) => setMessage(error.message));
 });
+elements.backupButton.addEventListener("click", createManualBackup);
 
 elements.openProductModalButton.addEventListener("click", () => openProductModal());
 elements.closeProductModalButton.addEventListener("click", closeProductModal);
@@ -785,6 +848,6 @@ window.addEventListener("popstate", () => {
 bindListControls();
 switchView(routeToView[window.location.pathname] || "inventoryView", { updateHistory: false });
 
-fetchDashboard().catch((error) => {
+Promise.all([fetchDashboard(), fetchBackupStatus()]).catch((error) => {
   setMessage(`后端未连接：${error.message}`);
 });
