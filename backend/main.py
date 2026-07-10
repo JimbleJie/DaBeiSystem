@@ -12,10 +12,15 @@ from .backup import (
     stop_backup_scheduler,
 )
 from .printer import (
+    PrintTemplateNotFound,
     PrinterError,
     PrinterUnavailable,
+    create_print_template,
+    delete_print_template_by_id,
+    get_print_template_settings,
     get_printer_status,
     print_labels,
+    update_print_template,
 )
 from .schemas import (
     CreateProductRequest,
@@ -26,6 +31,7 @@ from .schemas import (
     LabelOutboundRequest,
     OutboundStockRequest,
     PrintLabelsRequest,
+    PrintTemplateRequest,
     PullOrdersRequest,
     SimulateOrderRequest,
     UpdateProductRequest,
@@ -102,17 +108,50 @@ async def printing_status() -> dict:
     return get_printer_status()
 
 
+@app.get("/api/printing/template")
+async def printing_template() -> dict:
+    return get_print_template_settings()
+
+
+@app.post("/api/printing/template")
+async def create_printing_template(payload: PrintTemplateRequest) -> dict:
+    return create_print_template(payload.model_dump())
+
+
+@app.put("/api/printing/template/{template_id}")
+async def update_printing_template(template_id: str, payload: PrintTemplateRequest) -> dict:
+    try:
+        return update_print_template(template_id, payload.model_dump())
+    except PrintTemplateNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except PrinterError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.delete("/api/printing/template/{template_id}")
+async def delete_printing_template(template_id: str) -> dict:
+    try:
+        return delete_print_template_by_id(template_id)
+    except PrintTemplateNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except PrinterError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
 @app.post("/api/printing/labels", status_code=201)
 async def print_inventory_labels(payload: PrintLabelsRequest) -> dict:
     try:
         result = print_labels(
             [item.model_dump() for item in payload.labels],
             copies=payload.copies,
+            template_id=payload.templateId,
         )
         return {
             "message": "打印任务已发送",
             **result,
         }
+    except PrintTemplateNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
     except PrinterUnavailable as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
     except PrinterError as error:

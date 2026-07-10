@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
@@ -27,6 +27,7 @@
         <button class="tab-button" type="button" data-view-target="inboundDocumentsView" data-route="/inbound-documents">入库单管理</button>
         <button class="tab-button" type="button" data-view-target="outboundDocumentsView" data-route="/outbound-documents">出库单管理</button>
         <button class="tab-button" type="button" data-view-target="productsView" data-route="/products">产品管理</button>
+        <button class="tab-button" type="button" data-view-target="printTemplateView" data-route="/print-template">打印模版管理</button>
       </nav>
 
       <section class="view-stack">
@@ -78,10 +79,11 @@
                 <span>仅展示库存商品和编码二维码</span>
               </div>
             </div>
-
             <div class="inventory-engine-grid" id="inventoryEngineCards"></div>
+          </section>
 
-            <div class="panel-head inventory-list-head">
+          <section class="panel inventory-panel">
+            <div class="panel-head">
               <div>
                 <h2>实时库存引擎</h2>
                 <span>产品库存、商品编码和单件标签二维码</span>
@@ -178,6 +180,88 @@
             <div class="pagination" data-list-pagination="outboundDocuments"></div>
           </section>
         </section>
+
+        <section class="view" id="printTemplateView" aria-label="打印模版管理">
+          <section class="panel print-template-panel">
+            <div class="panel-head">
+              <div>
+                <h2>打印模版管理</h2>
+                <span>拖拽标签元素，保存后立即用于打印和预览。</span>
+              </div>
+              <span class="template-status-pill" id="printTemplateStatus">打印配置加载中</span>
+            </div>
+
+            <div class="template-designer-shell">
+              <aside class="template-toolbox" aria-label="元素工具栏">
+                <div class="toolbox-title">元素</div>
+                <button class="toolbox-item" type="button" data-template-select-element="labelCode">
+                  <span class="toolbox-icon">T</span>
+                  <span>编码文字</span>
+                </button>
+                <button class="toolbox-item" type="button" data-template-select-element="productName">
+                  <span class="toolbox-icon">T</span>
+                  <span>产品名称</span>
+                </button>
+                <button class="toolbox-item" type="button" data-template-select-element="qrcode">
+                  <span class="toolbox-icon">▦</span>
+                  <span>二维码</span>
+                </button>
+              </aside>
+
+              <section class="template-workbench">
+                <form id="printTemplateForm" class="template-topbar">
+                  <label class="template-manager-field">
+                    <span>已保存模版</span>
+                    <select id="printTemplateSelect"></select>
+                  </label>
+                  <label class="template-manager-field template-manager-name">
+                    <span>模版名称</span>
+                    <input id="printTemplateName" type="text" maxlength="40" autocomplete="off" placeholder="例如：20x30 入库标签">
+                  </label>
+                  <label class="template-manager-field compact-field">
+                    <span>宽度 mm</span>
+                    <input name="widthMm" type="number" min="5" max="120" step="0.1" required>
+                  </label>
+                  <label class="template-manager-field compact-field">
+                    <span>高度 mm</span>
+                    <input name="heightMm" type="number" min="5" max="120" step="0.1" required>
+                  </label>
+                  <label class="template-manager-field compact-field">
+                    <span>点/mm</span>
+                    <input name="dotsPerMm" type="number" min="4" max="24" step="1" required>
+                  </label>
+                  <div class="template-manager-actions">
+                    <button class="ghost-button" id="newPrintTemplateButton" type="button">新建</button>
+                    <button class="danger-button" id="deletePrintTemplateButton" type="button">删除</button>
+                    <button class="ghost-button" id="resetPrintTemplateButton" type="button">默认</button>
+                    <button id="savePrintTemplateButton" type="submit">保存</button>
+                    <span class="template-save-status" id="printTemplateSaveStatus">未保存</span>
+                  </div>
+                </form>
+
+                <div class="designer-preview-toolbar">
+                  <label><span>预览编码</span><input id="printTemplatePreviewCode" type="text" autocomplete="off"></label>
+                  <label><span>预览品名</span><input id="printTemplatePreviewName" type="text" autocomplete="off"></label>
+                  <div class="print-template-meta" id="printTemplateMeta"></div>
+                </div>
+
+                <div class="template-canvas-stage">
+                  <div class="template-ruler ruler-x"></div>
+                  <div class="template-ruler ruler-y"></div>
+                  <div id="printTemplatePreview"></div>
+                </div>
+              </section>
+
+              <aside class="template-property-panel">
+                <div class="property-head">
+                  <span>属性</span>
+                  <strong id="templateSelectedElementName">未选择元素</strong>
+                </div>
+                <div id="templateElementProperties" class="template-element-properties"></div>
+              </aside>
+            </div>
+          </section>
+        </section>
       </section>
     </section>
   </main>
@@ -195,7 +279,7 @@
         </label>
         <div class="form-actions">
           <button class="ghost-button" id="cancelProductButton" type="button">取消</button>
-          <button id="submitProductButton" type="submit">创建</button>
+          <button id="submitProductButton" type="submit">创建产品</button>
         </div>
       </form>
     </section>
@@ -218,7 +302,22 @@
     </section>
   </div>
 
+  <div class="modal-backdrop" id="printTemplatePickerModal" hidden>
+    <section class="modal-window template-picker-window" role="dialog" aria-modal="true" aria-labelledby="printTemplatePickerTitle">
+      <div class="modal-head">
+        <h2 id="printTemplatePickerTitle">选择打印模版</h2>
+        <button class="ghost-button icon-button" id="closePrintTemplatePickerButton" type="button" aria-label="关闭">×</button>
+      </div>
+      <p class="template-picker-hint" id="printTemplatePickerHint">请选择本次打印使用的模版。</p>
+      <div class="template-picker-list" id="printTemplatePickerList"></div>
+      <div class="form-actions">
+        <button class="ghost-button" id="cancelPrintTemplatePickerButton" type="button">取消</button>
+        <button id="confirmPrintTemplatePickerButton" type="button">使用此模版打印</button>
+      </div>
+    </section>
+  </div>
+
   <script src="./config.js"></script>
-  <script src="./app.js?v=20260630-inventory-tools"></script>
+  <script src="./app.js?v=20260710-template-save-state-2"></script>
 </body>
 </html>

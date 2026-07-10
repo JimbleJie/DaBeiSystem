@@ -1,4 +1,5 @@
 import random
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
@@ -21,6 +22,9 @@ stock_events: list[dict[str, Any]] = []
 stock_movements: list[dict[str, Any]] = []
 receipts: list[dict[str, Any]] = []
 inventory_labels: list[dict[str, Any]] = []
+
+SHORT_LABEL_CODE_PATTERN = re.compile(r"^\d{4}-\d{3}$")
+LEGACY_RECEIPT_LABEL_PATTERN = re.compile(r"^QR-RCV-\d{14}-(\d+)-(\d{3})$")
 
 
 def export_state() -> dict[str, Any]:
@@ -45,6 +49,8 @@ def load_persisted_state() -> None:
     stock_movements[:] = state.get("stockMovements", [])
     receipts[:] = state.get("receipts", [])
     inventory_labels[:] = state.get("inventoryLabels", [])
+    if migrate_label_codes_to_short():
+        persist_state()
 
 
 def persist_state() -> None:
@@ -76,6 +82,134 @@ LABEL_OUTBOUND_REASONS = {
     "private_domain": "私域发货",
     "offline": "线下发货",
 }
+
+
+def is_short_label_code(value: str) -> bool:
+    return bool(SHORT_LABEL_CODE_PATTERN.match(value or ""))
+
+
+def receipt_label_prefix(receipt_id: str) -> int:
+    numeric_groups = re.findall(r"\d+", receipt_id or "")
+    if not numeric_groups:
+        return 0
+    return int(numeric_groups[-1]) % 10000
+
+
+def label_sequence_from_code(label_code: str, fallback_index: int) -> int:
+    legacy_match = LEGACY_RECEIPT_LABEL_PATTERN.match(label_code or "")
+    if legacy_match:
+        return int(legacy_match.group(2))
+    if is_short_label_code(label_code):
+        return int(label_code[-3:])
+    numeric_groups = re.findall(r"\d+", label_code or "")
+    if numeric_groups:
+        return max(int(numeric_groups[-1]) % 1000, 1)
+    return fallback_index + 1
+
+
+def build_short_label_code(prefix: int, sequence: int) -> str:
+    return f"{prefix % 10000:04d}-{max(sequence, 1) % 1000:03d}"
+
+
+def resolve_receipt_label_prefix(receipt_id: str, label_codes: list[str], used_codes: set[str]) -> int:
+    base_prefix = receipt_label_prefix(receipt_id)
+    sequences = [
+        label_sequence_from_code(label_code, index)
+        for index, label_code in enumerate(label_codes)
+        if not is_short_label_code(label_code)
+    ]
+    if not sequences:
+        return base_prefix
+
+    for offset in range(10000):
+        candidate_prefix = (base_prefix + offset) % 10000
+        candidate_codes = {
+            build_short_label_code(candidate_prefix, sequence)
+            for sequence in sequences
+        }
+        if candidate_codes.isdisjoint(used_codes):
+            return candidate_prefix
+    raise BusinessError("短标签编码已用尽")
+
+
+def generate_short_label_codes(receipt_id: str, quantity: int) -> list[str]:
+    used_codes = {label.get("labelCode", "") for label in inventory_labels}
+    base_prefix = receipt_label_prefix(receipt_id)
+    for offset in range(10000):
+        prefix = (base_prefix + offset) % 10000
+        codes = [build_short_label_code(prefix, index + 1) for index in range(quantity)]
+        if all(code not in used_codes for code in codes):
+            return codes
+    raise BusinessError("短标签编码已用尽")
+
+
+def migrate_label_codes_to_short() -> bool:
+    changed = False
+    code_map: dict[str, str] = {}
+    labels_by_code = {label.get("labelCode", ""): label for label in inventory_labels}
+    used_codes = {
+        label["labelCode"]
+        for label in inventory_labels
+        if is_short_label_code(label.get("labelCode", ""))
+    }
+
+    for receipt in receipts:
+        label_codes = receipt.get("labelCodes")
+        if not isinstance(label_codes, list):
+            continue
+
+        prefix = resolve_receipt_label_prefix(receipt.get("receiptId", ""), label_codes, used_codes)
+        next_label_codes: list[str] = []
+        for index, old_code in enumerate(label_codes):
+            if is_short_label_code(old_code):
+                next_label_codes.append(old_code)
+                used_codes.add(old_code)
+                continue
+
+            new_code = build_short_label_code(prefix, label_sequence_from_code(old_code, index))
+            code_map[old_code] = new_code
+            next_label_codes.append(new_code)
+            used_codes.add(new_code)
+
+            label = labels_by_code.get(old_code)
+            if label is not None:
+                label["legacyLabelCode"] = old_code
+                label["labelCode"] = new_code
+                changed = True
+
+        if next_label_codes != label_codes:
+            receipt["labelCodes"] = next_label_codes
+            changed = True
+
+    used_codes.update(code_map.values())
+    for index, label in enumerate(inventory_labels):
+        old_code = label.get("labelCode", "")
+        if is_short_label_code(old_code):
+            continue
+
+        base_prefix = receipt_label_prefix(label.get("receiptId", "")) or (index + 1)
+        sequence = label_sequence_from_code(old_code, index)
+        for offset in range(10000):
+            new_code = build_short_label_code(base_prefix + offset, sequence)
+            if new_code not in used_codes:
+                break
+        else:
+            raise BusinessError("短标签编码已用尽")
+
+        label["legacyLabelCode"] = old_code
+        label["labelCode"] = new_code
+        code_map[old_code] = new_code
+        used_codes.add(new_code)
+        changed = True
+
+    if code_map:
+        for movement in stock_movements:
+            reference_no = movement.get("referenceNo")
+            if reference_no in code_map:
+                movement["referenceNo"] = code_map[reference_no]
+                changed = True
+
+    return changed
 
 
 load_persisted_state()
@@ -328,6 +462,7 @@ def delete_inventory_label(label_code: str) -> dict[str, Any]:
     label = find_label(label_code)
     if label is None:
         raise BusinessError("二维码标签不存在")
+    actual_label_code = label["labelCode"]
 
     product = find_product(label.get("skuId", ""))
     before_stock = product["centralStock"] if product else 0
@@ -339,15 +474,15 @@ def delete_inventory_label(label_code: str) -> dict[str, Any]:
 
     for receipt in receipts:
         label_codes = receipt.get("labelCodes")
-        if isinstance(label_codes, list) and label_code in label_codes:
-            label_codes.remove(label_code)
+        if isinstance(label_codes, list) and actual_label_code in label_codes:
+            label_codes.remove(actual_label_code)
 
     stock_events.insert(
         0,
         {
             "id": str(uuid4()),
             "type": "delete_label",
-            "message": f"二维码标签 {label_code} 已删除",
+            "message": f"二维码标签 {actual_label_code} 已删除",
             "skuId": label.get("skuId", ""),
             "quantity": -1 if label.get("status") == "in_stock" else 0,
             "createdAt": utc_now(),
@@ -365,7 +500,7 @@ def delete_inventory_label(label_code: str) -> dict[str, Any]:
             after_stock=product["centralStock"],
             warehouse=product.get("warehouse", "主仓"),
             location=product.get("location", ""),
-            reference_no=label_code,
+            reference_no=actual_label_code,
         )
 
     persist_state()
@@ -499,10 +634,11 @@ def inbound_with_labels(
     product["centralStock"] += quantity
     product["updatedAt"] = utc_now()
     labels = []
+    label_codes = generate_short_label_codes(receipt_id, quantity)
 
     for index in range(quantity):
         label = {
-            "labelCode": f"QR-{receipt_id}-{index + 1:03d}",
+            "labelCode": label_codes[index],
             "skuId": product["skuId"],
             "productName": product["name"],
             "status": "in_stock",
@@ -829,7 +965,13 @@ def find_receipt(receipt_id: str) -> dict[str, Any] | None:
 
 
 def find_label(label_code: str) -> dict[str, Any] | None:
-    return next((label for label in inventory_labels if label["labelCode"] == label_code), None)
+    return next(
+        (
+            label for label in inventory_labels
+            if label["labelCode"] == label_code or label.get("legacyLabelCode") == label_code
+        ),
+        None,
+    )
 
 
 def get_print_label(label_code: str) -> dict[str, str]:

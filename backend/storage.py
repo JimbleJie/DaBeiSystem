@@ -153,6 +153,45 @@ def load_state() -> dict[str, Any]:
         }
 
 
+def load_json_state(key: str, default: Any = None) -> Any:
+    ensure_database()
+    with connect() as connection:
+        row = connection.execute(
+            "SELECT value FROM app_state WHERE key = ?",
+            (key,),
+        ).fetchone()
+    if row is None:
+        return default
+    try:
+        return json.loads(row["value"])
+    except json.JSONDecodeError:
+        return default
+
+
+def save_json_state(key: str, value: Any) -> None:
+    ensure_database()
+    with connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO app_state (key, value, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(key) DO UPDATE SET
+                value = excluded.value,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (key, json.dumps(value, ensure_ascii=False, separators=(",", ":"))),
+        )
+
+
+def delete_state(key: str) -> None:
+    ensure_database()
+    with connect() as connection:
+        connection.execute(
+            "DELETE FROM app_state WHERE key = ?",
+            (key,),
+        )
+
+
 def save_state(state: dict[str, Any]) -> None:
     ensure_database()
     with connect() as connection:
