@@ -30,6 +30,7 @@ from .schemas import (
     LabelInboundRequest,
     LabelOutboundRequest,
     OutboundStockRequest,
+    PersonnelRequest,
     PrintLabelsRequest,
     PrintTemplateRequest,
     PullOrdersRequest,
@@ -38,11 +39,14 @@ from .schemas import (
 )
 from .services import (
     BusinessError,
+    create_personnel,
     create_product,
     delete_inventory_label,
+    delete_personnel,
     delete_product,
     get_dashboard,
     get_inventory_system,
+    list_personnel,
     get_logistics,
     get_print_label,
     inbound_with_labels,
@@ -216,6 +220,38 @@ async def platforms() -> dict:
 @app.get("/api/products")
 async def products() -> dict:
     return {"products": list_products()}
+
+
+@app.get("/api/personnel")
+async def personnel() -> dict:
+    return {"personnel": list_personnel()}
+
+
+@app.post("/api/personnel", status_code=201)
+async def create_personnel_api(payload: PersonnelRequest) -> dict:
+    try:
+        person = create_personnel(payload.name)
+        return {
+            "person": person,
+            "personnel": list_personnel(),
+            "dashboard": get_dashboard(),
+        }
+    except BusinessError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.delete("/api/personnel/{person_id}")
+async def delete_personnel_api(person_id: str) -> dict:
+    try:
+        person = delete_personnel(person_id)
+        return {
+            "person": person,
+            "personnel": list_personnel(),
+            "dashboard": get_dashboard(),
+        }
+    except BusinessError as error:
+        status_code = 404 if str(error) == "人员不存在" else 400
+        raise HTTPException(status_code=status_code, detail=str(error)) from error
 
 
 @app.post("/api/products", status_code=201)

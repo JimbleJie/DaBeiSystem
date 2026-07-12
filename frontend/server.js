@@ -39,7 +39,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    const routeFallbacks = new Set(["/", "/products", "/inventory", "/inbound-documents", "/outbound-documents", "/print-template"]);
+    const routeFallbacks = new Set(["/", "/products", "/inventory", "/inbound-documents", "/outbound-documents", "/personnel", "/print-template"]);
     const requestPath = routeFallbacks.has(url.pathname) ? "/index.html" : url.pathname;
     const safePath = normalize(requestPath).replace(/^(\.\.[/\\])+/, "");
     const filePath = join(ROOT, safePath);

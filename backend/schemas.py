@@ -47,6 +47,10 @@ class UpdateProductRequest(BaseModel):
     name: str
 
 
+class PersonnelRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=40)
+
+
 class OutboundStockRequest(BaseModel):
     skuId: str
     quantity: int = Field(ge=1)

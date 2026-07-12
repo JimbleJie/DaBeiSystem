@@ -23,6 +23,11 @@ import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
+
 import com.google.zxing.integration.android.IntentIntegrator;
 import com.google.zxing.integration.android.IntentResult;
 
@@ -57,6 +62,7 @@ public class MainActivity extends Activity {
     private final List<ProductOption> products = new ArrayList<>();
     private final List<LabelOption> labels = new ArrayList<>();
     private final List<ReasonOption> reasons = new ArrayList<>();
+    private final List<String> personnel = new ArrayList<>();
     private final List<String> pageStack = new ArrayList<>();
     private JSONObject dashboard;
     private EditText outboundLabelInput;
@@ -65,6 +71,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         showHome();
         refreshDashboard(true);
     }
@@ -112,7 +119,7 @@ public class MainActivity extends Activity {
         page.addView(settingsButton);
 
         Button refreshButton = secondaryButton("刷新后台数据");
-        refreshButton.setOnClickListener(view -> refreshDashboard(true));
+        refreshButton.setOnClickListener(view -> refreshDashboard(true, true));
         page.addView(refreshButton);
 
         Button inboundButton = primaryButton("入库");
@@ -123,8 +130,6 @@ public class MainActivity extends Activity {
         outboundButton.setOnClickListener(view -> navigateTo(PAGE_OUTBOUND));
         page.addView(outboundButton);
 
-        page.addView(sectionTitle("后台地址"));
-        page.addView(bodyText(apiBase()));
         page.addView(sectionTitle("库存展示"));
         page.addView(bodyText(summaryText()));
         setContentView(wrap(page));
@@ -156,6 +161,8 @@ public class MainActivity extends Activity {
         pathInput.setText(prefs().getString("apiPath", "/api"));
         page.addView(label("API 路径"));
         page.addView(pathInput);
+        page.addView(sectionTitle("当前后台地址"));
+        page.addView(bodyText(apiBase()));
 
         Button saveButton = primaryButton("保存并测试连接");
         saveButton.setOnClickListener(view -> {
@@ -173,7 +180,8 @@ public class MainActivity extends Activity {
                     .apply();
             request("GET", "/health", null, json -> {
                 toast("连接成功");
-                refreshDashboard(true);
+                showSettings();
+                refreshDashboard(false);
             }, error -> toast("连接失败：" + error));
         });
         page.addView(saveButton);
@@ -190,8 +198,17 @@ public class MainActivity extends Activity {
         page.addView(label("选择产品"));
         AutoCompleteTextView productInput = productSearchInput();
         final ProductOption[] selectedProduct = {null};
-        productInput.setOnItemClickListener((parent, view, position, id) ->
-                selectedProduct[0] = resolveProductSelection(parent.getItemAtPosition(position).toString()));
+        productInput.setOnItemClickListener((parent, view, position, id) -> {
+            String selectedText = view instanceof TextView ? ((TextView) view).getText().toString() : "";
+            if (selectedText.trim().isEmpty() && position >= 0 && position < parent.getAdapter().getCount()) {
+                Object item = parent.getAdapter().getItem(position);
+                selectedText = item == null ? "" : item.toString();
+            }
+            selectedProduct[0] = resolveProductSelection(selectedText);
+            if (selectedProduct[0] != null) {
+                productInput.setText(formatProductOption(selectedProduct[0]), false);
+            }
+        });
         productInput.addTextChangedListener(new TextWatcher() {
             @Override
             public void beforeTextChanged(CharSequence text, int start, int count, int after) {
@@ -215,7 +232,7 @@ public class MainActivity extends Activity {
         qualifiedInput.setText("10");
         page.addView(qualifiedInput);
 
-        Spinner operatorSpinner = spinner(listOf("小梅雨", "六一"));
+        Spinner operatorSpinner = spinner(personnelNames());
         page.addView(label("选择入库人"));
         page.addView(operatorSpinner);
 
@@ -306,7 +323,7 @@ public class MainActivity extends Activity {
         page.addView(label("出库原因"));
         page.addView(reasonSpinner);
 
-        Spinner operatorSpinner = spinner(listOf("小梅雨", "六一"));
+        Spinner operatorSpinner = spinner(personnelNames());
         page.addView(label("出库人"));
         page.addView(operatorSpinner);
 
@@ -357,6 +374,10 @@ public class MainActivity extends Activity {
         if (!currentPage.equals(page)) {
             pageStack.add(currentPage);
         }
+        if (shouldRefreshBeforeRender(page)) {
+            refreshAndRenderPage(page);
+            return;
+        }
         renderPage(page);
     }
 
@@ -386,19 +407,69 @@ public class MainActivity extends Activity {
     }
 
     private void refreshDashboard(boolean renderHome) {
+        refreshDashboard(renderHome, false);
+    }
+
+    private void refreshDashboard(boolean renderHome, boolean notify) {
         request("GET", "/dashboard", null, json -> {
             dashboard = json;
             parseDashboard(json);
-            if (renderHome) {
+            if (renderHome && PAGE_HOME.equals(currentPage)) {
                 showHome();
             }
-        }, error -> toast("后台连接失败：" + error));
+            if (notify) {
+                toast("刷新成功");
+            }
+        }, error -> toast((notify ? "刷新失败：" : "后台连接失败：") + error));
+    }
+
+    private boolean shouldRefreshBeforeRender(String page) {
+        return PAGE_INBOUND.equals(page) || PAGE_OUTBOUND.equals(page);
+    }
+
+    private void refreshAndRenderPage(String page) {
+        showLoadingPage(page);
+        request("GET", "/dashboard", null, json -> {
+            dashboard = json;
+            parseDashboard(json);
+            if (page.equals(currentPage)) {
+                renderPage(page);
+            }
+        }, error -> {
+            toast("刷新失败：" + error);
+            if (page.equals(currentPage)) {
+                renderPage(page);
+            }
+        });
+    }
+
+    private void showLoadingPage(String page) {
+        currentPage = page;
+        outboundLabelInput = null;
+        LinearLayout layout = pageRoot();
+        layout.addView(title(pageTitle(page), "正在刷新后台数据，请稍候"));
+        layout.addView(backButton());
+        setContentView(wrap(layout));
+    }
+
+    private String pageTitle(String page) {
+        if (PAGE_INBOUND.equals(page)) {
+            return "入库";
+        }
+        if (PAGE_OUTBOUND.equals(page)) {
+            return "出库";
+        }
+        if (PAGE_SETTINGS.equals(page)) {
+            return "设置";
+        }
+        return "大北库存";
     }
 
     private void parseDashboard(JSONObject json) {
         products.clear();
         labels.clear();
         reasons.clear();
+        personnel.clear();
 
         JSONArray productArray = json.optJSONArray("products");
         if (productArray != null) {
@@ -432,6 +503,28 @@ public class MainActivity extends Activity {
                 for (int i = 0; i < reasonArray.length(); i++) {
                     JSONObject item = reasonArray.optJSONObject(i);
                     reasons.add(new ReasonOption(item.optString("id"), item.optString("name")));
+                }
+            }
+
+            JSONArray personnelArray = system.optJSONArray("personnel");
+            if (personnelArray != null) {
+                for (int i = 0; i < personnelArray.length(); i++) {
+                    JSONObject item = personnelArray.optJSONObject(i);
+                    String name = item == null ? "" : item.optString("name").trim();
+                    if (!name.isEmpty() && !personnel.contains(name)) {
+                        personnel.add(name);
+                    }
+                }
+            }
+        }
+
+        JSONArray dashboardPersonnelArray = json.optJSONArray("personnel");
+        if (dashboardPersonnelArray != null) {
+            for (int i = 0; i < dashboardPersonnelArray.length(); i++) {
+                JSONObject item = dashboardPersonnelArray.optJSONObject(i);
+                String name = item == null ? "" : item.optString("name").trim();
+                if (!name.isEmpty() && !personnel.contains(name)) {
+                    personnel.add(name);
                 }
             }
         }
@@ -619,10 +712,36 @@ public class MainActivity extends Activity {
         return names;
     }
 
+    private List<String> personnelNames() {
+        List<String> names = new ArrayList<>(personnel);
+        if (names.isEmpty()) {
+            names.add("小梅雨");
+            names.add("六一");
+        }
+        return names;
+    }
+
     private ScrollView wrap(View view) {
         ScrollView scrollView = new ScrollView(this);
         scrollView.setBackgroundColor(BG);
         scrollView.addView(view);
+        int baseLeft = view.getPaddingLeft();
+        int baseTop = view.getPaddingTop();
+        int baseRight = view.getPaddingRight();
+        int baseBottom = view.getPaddingBottom();
+        ViewCompat.setOnApplyWindowInsetsListener(scrollView, (root, insets) -> {
+            Insets systemBars = insets.getInsets(
+                    WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout()
+            );
+            view.setPadding(
+                    baseLeft + systemBars.left,
+                    baseTop + systemBars.top + dp(8),
+                    baseRight + systemBars.right,
+                    baseBottom + systemBars.bottom
+            );
+            return insets;
+        });
+        ViewCompat.requestApplyInsets(scrollView);
         return scrollView;
     }
 
@@ -716,28 +835,11 @@ public class MainActivity extends Activity {
         input.setBackgroundColor(Color.WHITE);
         input.setLayoutParams(blockParams());
 
-        ArrayAdapter<String> adapter = productSearchAdapter();
-        input.setAdapter(adapter);
+        input.setAdapter(productSearchAdapter());
         input.setOnClickListener(view -> input.showDropDown());
         input.setOnFocusChangeListener((view, hasFocus) -> {
             if (hasFocus) {
                 input.showDropDown();
-            }
-        });
-        input.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence text, int start, int count, int after) {
-            }
-
-            @Override
-            public void onTextChanged(CharSequence text, int start, int before, int count) {
-            }
-
-            @Override
-            public void afterTextChanged(Editable editable) {
-                adapter.clear();
-                adapter.addAll(productSearchLabels(editable.toString()));
-                adapter.notifyDataSetChanged();
             }
         });
         return input;

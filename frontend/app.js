@@ -2,6 +2,7 @@ const API_BASE = window.APP_CONFIG.apiBaseUrl;
 
 const state = {
   products: [],
+  personnel: [],
   inventoryLabels: [],
   inboundDocuments: [],
   outboundDocuments: [],
@@ -81,6 +82,10 @@ const elements = {
   outboundDocumentList: document.querySelector("#outboundDocumentList"),
   outboundDocumentsSearch: document.querySelector("#outboundDocumentsSearch"),
   outboundDocumentsPageSize: document.querySelector("#outboundDocumentsPageSize"),
+  personnelForm: document.querySelector("#personnelForm"),
+  personnelNameInput: document.querySelector("#personnelNameInput"),
+  personnelList: document.querySelector("#personnelList"),
+  submitPersonnelButton: document.querySelector("#submitPersonnelButton"),
   printTemplateForm: document.querySelector("#printTemplateForm"),
   printTemplateSelect: document.querySelector("#printTemplateSelect"),
   printTemplateName: document.querySelector("#printTemplateName"),
@@ -271,6 +276,26 @@ async function fetchDashboard() {
   render();
 }
 
+function delay(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function fetchDashboardWithRetry(attempts = 2) {
+  let lastError;
+  for (let index = 0; index < attempts; index += 1) {
+    try {
+      await fetchDashboard();
+      return;
+    } catch (error) {
+      lastError = error;
+      if (index < attempts - 1) {
+        await delay(350);
+      }
+    }
+  }
+  throw lastError;
+}
+
 async function fetchBackupStatus() {
   state.backupStatus = await request("/backups/status");
   renderBackupStatus();
@@ -288,11 +313,19 @@ async function legacyFetchPrintTemplate() {
 
 function render() {
   renderProducts();
+  renderPersonnel();
   renderInventorySystem();
   renderInventory();
   renderDocuments();
   renderPrintTemplate();
   renderBackupStatus();
+}
+
+function getPersonnelOptions() {
+  const personnel = Array.isArray(state.personnel) ? state.personnel : [];
+  return personnel.length > 0
+    ? personnel
+    : [{ id: "person-default", name: "小梅雨" }, { id: "person-default-2", name: "六一" }];
 }
 
 function renderBackupStatus() {
@@ -745,21 +778,36 @@ function openInventoryModal() {
   elements.inventoryModal.hidden = false;
 }
 
+async function openInventoryModalWithRefresh() {
+  elements.openInventoryModalButton.disabled = true;
+  try {
+    await fetchDashboardWithRetry(3);
+    openInventoryModal();
+  } catch (error) {
+    setMessage(`刷新产品列表失败：${error.message}`);
+    openInventoryModal();
+  } finally {
+    elements.openInventoryModalButton.disabled = false;
+  }
+}
+
 function closeInventoryModal() {
   elements.inventoryModal.hidden = true;
   state.inventoryDraftRows = [];
 }
 
 function createInventoryDraftRow() {
+  const personnel = getPersonnelOptions();
   return {
     id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
     skuId: state.products[0]?.skuId || "",
     qualifiedQuantity: 10,
-    operator: "小梅雨"
+    operator: personnel[0]?.name || ""
   };
 }
 
 function renderInventoryDraftRows() {
+  const personnel = getPersonnelOptions();
   elements.inventoryBatchRows.innerHTML = state.inventoryDraftRows.map((row, index) => `
     <fieldset class="inventory-batch-row" data-inventory-row-id="${row.id}">
       <legend>库存 ${index + 1}</legend>
@@ -778,8 +826,8 @@ function renderInventoryDraftRows() {
       <label>
         <span>入库人</span>
         <select data-inventory-field="operator">
-          ${["小梅雨", "六一"].map((operator) => `
-            <option value="${operator}" ${operator === row.operator ? "selected" : ""}>${operator}</option>
+          ${personnel.map((person) => `
+            <option value="${escapeHtml(person.name)}" ${person.name === row.operator ? "selected" : ""}>${escapeHtml(person.name)}</option>
           `).join("")}
         </select>
       </label>
@@ -876,20 +924,51 @@ async function saveProduct(event) {
   }
 
   elements.submitProductButton.disabled = true;
+  const isEditing = Boolean(state.editingProductSkuId);
+  const editingSkuId = state.editingProductSkuId;
   try {
-    const isEditing = Boolean(state.editingProductSkuId);
     const result = await request(isEditing ? `/products/${encodeURIComponent(state.editingProductSkuId)}` : "/products", {
       method: isEditing ? "PUT" : "POST",
       body: JSON.stringify({ name })
     });
-    Object.assign(state, result.dashboard);
+    if (result.dashboard) {
+      Object.assign(state, result.dashboard);
+    }
     closeProductModal();
     render();
     setMessage(isEditing ? "产品已更新" : "产品已创建");
+    fetchDashboard().catch((error) => {
+      setMessage(`${isEditing ? "产品已更新" : "产品已创建"}，但自动刷新失败：${error.message}`);
+    });
   } catch (error) {
+    const recovered = await recoverProductSaveAfterNetworkError({ name, isEditing, editingSkuId, error });
+    if (recovered) {
+      return;
+    }
     setMessage(error.message);
   } finally {
     elements.submitProductButton.disabled = false;
+  }
+}
+
+async function recoverProductSaveAfterNetworkError({ name, isEditing, editingSkuId, error }) {
+  if (!/Failed to fetch|NetworkError|Load failed/i.test(error.message || "")) {
+    return false;
+  }
+
+  try {
+    await fetchDashboardWithRetry(3);
+    const saved = isEditing
+      ? state.products.some((product) => product.skuId === editingSkuId && product.name === name)
+      : state.products.some((product) => product.name === name);
+    if (!saved) {
+      return false;
+    }
+    closeProductModal();
+    setMessage(isEditing ? "产品已更新，列表已刷新" : "产品已创建，列表已刷新");
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -901,9 +980,91 @@ async function deleteProduct(skuId) {
 
   try {
     const result = await request(`/products/${encodeURIComponent(skuId)}`, { method: "DELETE" });
-    Object.assign(state, result.dashboard);
+    if (result.dashboard) {
+      Object.assign(state, result.dashboard);
+    } else {
+      state.products = state.products.filter((item) => item.skuId !== skuId);
+    }
     render();
     setMessage("产品已删除");
+    fetchDashboard().catch((error) => {
+      setMessage(`产品已删除，但自动刷新失败：${error.message}`);
+    });
+  } catch (error) {
+    const recovered = await recoverProductDeleteAfterNetworkError({ skuId, error });
+    if (recovered) {
+      return;
+    }
+    setMessage(error.message);
+  }
+}
+
+async function recoverProductDeleteAfterNetworkError({ skuId, error }) {
+  if (!/Failed to fetch|NetworkError|Load failed/i.test(error.message || "")) {
+    return false;
+  }
+
+  try {
+    await fetchDashboardWithRetry(3);
+    const deleted = !state.products.some((product) => product.skuId === skuId);
+    if (!deleted) {
+      return false;
+    }
+    setMessage("产品已删除，列表已刷新");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function savePersonnel(event) {
+  event.preventDefault();
+  const name = elements.personnelNameInput.value.trim();
+  if (!name) {
+    setMessage("请输入人员姓名");
+    elements.personnelNameInput.focus();
+    return;
+  }
+
+  elements.submitPersonnelButton.disabled = true;
+  try {
+    const result = await request("/personnel", {
+      method: "POST",
+      body: JSON.stringify({ name })
+    });
+    if (result.dashboard) {
+      Object.assign(state, result.dashboard);
+    } else {
+      state.personnel = result.personnel || state.personnel;
+    }
+    elements.personnelNameInput.value = "";
+    render();
+    setMessage(`已添加人员：${result.person?.name || name}`);
+  } catch (error) {
+    setMessage(error.message);
+  } finally {
+    elements.submitPersonnelButton.disabled = false;
+  }
+}
+
+async function deletePersonnel(personId) {
+  try {
+    const result = await request(`/personnel/${encodeURIComponent(personId)}`, {
+      method: "DELETE"
+    });
+    if (result.dashboard) {
+      Object.assign(state, result.dashboard);
+    } else {
+      state.personnel = result.personnel || state.personnel;
+    }
+    const firstPerson = getPersonnelOptions()[0]?.name || "";
+    state.inventoryDraftRows.forEach((row) => {
+      if (!getPersonnelOptions().some((person) => person.name === row.operator)) {
+        row.operator = firstPerson;
+      }
+    });
+    render();
+    setMessage(`已删除人员：${result.person?.name || ""}`);
   } catch (error) {
     setMessage(error.message);
   }
@@ -949,6 +1110,24 @@ function legacyUpdatePrintTemplateDraft(field, value) {
     [field]: nextValue
   };
   renderPrintTemplate();
+}
+
+function renderPersonnel() {
+  if (!elements.personnelList) {
+    return;
+  }
+  const personnel = getPersonnelOptions();
+  elements.personnelList.innerHTML = personnel.length > 0
+    ? personnel.map((person) => `
+      <article class="personnel-card">
+        <div>
+          <strong>${escapeHtml(person.name)}</strong>
+          <span>${escapeHtml(person.id)}</span>
+        </div>
+        <button class="danger-button" type="button" data-personnel-delete="${escapeHtml(person.id)}" ${personnel.length <= 1 ? "disabled" : ""}>删除</button>
+      </article>
+    `).join("")
+    : `<div class="empty-state">暂无人员</div>`;
 }
 
 async function legacySavePrintTemplate(event) {
@@ -2073,6 +2252,7 @@ const routeToView = {
   "/inventory": "inventoryView",
   "/inbound-documents": "inboundDocumentsView",
   "/outbound-documents": "outboundDocumentsView",
+  "/personnel": "personnelView",
   "/print-template": "printTemplateView"
 };
 
@@ -2081,6 +2261,7 @@ const viewToRoute = {
   inventoryView: "/inventory",
   inboundDocumentsView: "/inbound-documents",
   outboundDocumentsView: "/outbound-documents",
+  personnelView: "/personnel",
   printTemplateView: "/print-template"
 };
 
@@ -2099,9 +2280,18 @@ function switchView(targetViewId, options = {}) {
   }
 }
 
+function refreshViewData(targetViewId) {
+  if (targetViewId === "printTemplateView") {
+    fetchPrintTemplate().catch((error) => setMessage(error.message));
+    return;
+  }
+  fetchDashboard().catch((error) => setMessage(error.message));
+}
+
 document.querySelectorAll("[data-view-target]").forEach((button) => {
   button.addEventListener("click", () => {
     switchView(button.dataset.viewTarget);
+    refreshViewData(button.dataset.viewTarget);
   });
 });
 
@@ -2116,7 +2306,7 @@ elements.openProductModalButton.addEventListener("click", () => openProductModal
 elements.closeProductModalButton.addEventListener("click", closeProductModal);
 elements.cancelProductButton.addEventListener("click", closeProductModal);
 elements.productForm.addEventListener("submit", saveProduct);
-elements.openInventoryModalButton.addEventListener("click", openInventoryModal);
+elements.openInventoryModalButton.addEventListener("click", openInventoryModalWithRefresh);
 elements.closeInventoryModalButton.addEventListener("click", closeInventoryModal);
 elements.cancelInventoryButton.addEventListener("click", closeInventoryModal);
 elements.addInventoryRowButton.addEventListener("click", addInventoryDraftRow);
@@ -2154,6 +2344,14 @@ elements.productList.addEventListener("click", (event) => {
   if (button.dataset.productAction === "delete") {
     deleteProduct(button.dataset.skuId);
   }
+});
+elements.personnelForm?.addEventListener("submit", savePersonnel);
+elements.personnelList?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-personnel-delete]");
+  if (!button) {
+    return;
+  }
+  deletePersonnel(button.dataset.personnelDelete);
 });
 elements.inventoryList.addEventListener("click", (event) => {
   const deleteButton = event.target.closest("[data-label-action='delete']");
@@ -2287,7 +2485,9 @@ window.addEventListener("keydown", (event) => {
 });
 
 window.addEventListener("popstate", () => {
-  switchView(routeToView[window.location.pathname] || "inventoryView", { updateHistory: false });
+  const targetViewId = routeToView[window.location.pathname] || "inventoryView";
+  switchView(targetViewId, { updateHistory: false });
+  refreshViewData(targetViewId);
 });
 
 bindListControls();

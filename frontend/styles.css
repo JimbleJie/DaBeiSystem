@@ -256,6 +256,79 @@ button:disabled {
   gap: 8px;
 }
 
+.personnel-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.personnel-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+  padding: 14px;
+}
+
+.personnel-form label {
+  display: grid;
+  gap: 7px;
+}
+
+.personnel-form label span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.personnel-form input {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  padding: 0 11px;
+  outline: none;
+}
+
+.personnel-form input:focus {
+  border-color: #9bcac1;
+  box-shadow: 0 0 0 3px rgba(31, 118, 102, 0.12);
+}
+
+.personnel-list {
+  display: grid;
+  gap: 10px;
+}
+
+.personnel-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+  padding: 14px;
+}
+
+.personnel-card strong,
+.personnel-card span {
+  display: block;
+}
+
+.personnel-card strong {
+  font-size: 16px;
+}
+
+.personnel-card span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .inventory-system-panel {
   display: grid;
   gap: 14px;
@@ -1287,6 +1360,7 @@ th {
   }
 
   .header-actions,
+  .personnel-form,
   .inventory-engine-grid,
   .document-fields,
   .print-template-meta,
@@ -1329,6 +1403,11 @@ th {
 
   .product-management-card {
     align-items: stretch;
+  }
+
+  .personnel-card {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .product-management-actions {

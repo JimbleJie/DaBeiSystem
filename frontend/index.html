@@ -26,6 +26,7 @@
         <button class="tab-button active" type="button" data-view-target="inventoryView" data-route="/inventory">库存管理</button>
         <button class="tab-button" type="button" data-view-target="inboundDocumentsView" data-route="/inbound-documents">入库单管理</button>
         <button class="tab-button" type="button" data-view-target="outboundDocumentsView" data-route="/outbound-documents">出库单管理</button>
+        <button class="tab-button" type="button" data-view-target="personnelView" data-route="/personnel">人员管理</button>
         <button class="tab-button" type="button" data-view-target="productsView" data-route="/products">产品管理</button>
         <button class="tab-button" type="button" data-view-target="printTemplateView" data-route="/print-template">打印模版管理</button>
       </nav>
@@ -181,6 +182,27 @@
           </section>
         </section>
 
+        <section class="view" id="personnelView" aria-label="人员管理">
+          <section class="panel personnel-panel">
+            <div class="panel-head">
+              <div>
+                <h2>人员管理</h2>
+                <span>维护入库、出库和 Android App 可选择的操作人员。</span>
+              </div>
+            </div>
+
+            <form id="personnelForm" class="personnel-form">
+              <label>
+                <span>人员姓名</span>
+                <input id="personnelNameInput" type="text" maxlength="40" autocomplete="off" required placeholder="请输入人员姓名">
+              </label>
+              <button id="submitPersonnelButton" type="submit">添加人员</button>
+            </form>
+
+            <div id="personnelList" class="personnel-list"></div>
+          </section>
+        </section>
+
         <section class="view" id="printTemplateView" aria-label="打印模版管理">
           <section class="panel print-template-panel">
             <div class="panel-head">
@@ -318,6 +340,6 @@
   </div>
 
   <script src="./config.js"></script>
-  <script src="./app.js?v=20260710-template-save-state-2"></script>
+  <script src="./app.js?v=20260712-product-save-5"></script>
 </body>
 </html>

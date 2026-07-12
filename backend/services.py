@@ -5,7 +5,7 @@ from typing import Any
 from uuid import uuid4
 
 from .adapters import ADAPTERS, PLATFORMS, random_buyer, utc_now
-from .storage import load_state, save_state
+from .storage import load_json_state, load_state, save_json_state
 
 
 class BusinessError(Exception):
@@ -25,6 +25,8 @@ inventory_labels: list[dict[str, Any]] = []
 
 SHORT_LABEL_CODE_PATTERN = re.compile(r"^\d{4}-\d{3}$")
 LEGACY_RECEIPT_LABEL_PATTERN = re.compile(r"^QR-RCV-\d{14}-(\d+)-(\d{3})$")
+PERSONNEL_STATE_KEY = "personnel"
+DEFAULT_PERSONNEL_NAMES = ("小梅雨", "六一")
 
 
 def export_state() -> dict[str, Any]:
@@ -55,6 +57,79 @@ def load_persisted_state() -> None:
 
 def persist_state() -> None:
     save_state(export_state())
+
+
+def normalize_person_name(name: str | None) -> str:
+    return str(name or "").strip()
+
+
+def build_personnel_item(name: str) -> dict[str, str]:
+    return {
+        "id": f"person-{uuid4().hex[:10]}",
+        "name": name,
+    }
+
+
+def get_personnel() -> list[dict[str, str]]:
+    saved = load_json_state(PERSONNEL_STATE_KEY, None)
+    saved_items = saved.get("items") if isinstance(saved, dict) else saved
+    if isinstance(saved_items, list):
+        personnel: list[dict[str, str]] = []
+        seen: set[str] = set()
+        for item in saved_items:
+            if isinstance(item, dict):
+                name = normalize_person_name(item.get("name"))
+                person_id = str(item.get("id") or f"person-{uuid4().hex[:10]}")
+            else:
+                name = normalize_person_name(item)
+                person_id = f"person-{uuid4().hex[:10]}"
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            personnel.append({"id": person_id, "name": name})
+        if personnel:
+            return personnel
+
+    personnel = [build_personnel_item(name) for name in DEFAULT_PERSONNEL_NAMES]
+    save_personnel(personnel)
+    return personnel
+
+
+def save_personnel(personnel: list[dict[str, str]]) -> None:
+    save_json_state(PERSONNEL_STATE_KEY, {"items": personnel})
+
+
+def list_personnel() -> list[dict[str, str]]:
+    return get_personnel()
+
+
+def create_personnel(name: str) -> dict[str, str]:
+    normalized_name = normalize_person_name(name)
+    if not normalized_name:
+        raise BusinessError("人员姓名不能为空")
+
+    personnel = get_personnel()
+    if any(item["name"] == normalized_name for item in personnel):
+        raise BusinessError("人员已存在")
+
+    person = build_personnel_item(normalized_name)
+    personnel.append(person)
+    save_personnel(personnel)
+    return person
+
+
+def delete_personnel(person_id: str) -> dict[str, str]:
+    personnel = get_personnel()
+    if len(personnel) <= 1:
+        raise BusinessError("至少保留一名人员")
+
+    next_personnel = [item for item in personnel if item["id"] != person_id]
+    if len(next_personnel) == len(personnel):
+        raise BusinessError("人员不存在")
+
+    removed = next(item for item in personnel if item["id"] == person_id)
+    save_personnel(next_personnel)
+    return removed
 
 OUTBOUND_CHANNELS = {
     "taobao": "淘宝渠道",
@@ -238,6 +313,7 @@ def get_dashboard() -> dict[str, Any]:
         "inventoryLabels": inventory_labels[:80],
         "inboundDocuments": build_inbound_documents(),
         "outboundDocuments": build_outbound_documents(),
+        "personnel": list_personnel(),
         "inventorySystem": get_inventory_system(),
         "metrics": {
             "totalOrders": len(orders),
@@ -1092,6 +1168,7 @@ def get_inventory_system() -> dict[str, Any]:
             {"id": reason_id, "name": reason_name}
             for reason_id, reason_name in LABEL_OUTBOUND_REASONS.items()
         ],
+        "personnel": list_personnel(),
         "receipts": receipts[:10],
         "labels": inventory_labels[:80],
         "labelStats": {
