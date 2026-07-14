@@ -1,4 +1,5 @@
 import sqlite3
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
@@ -29,6 +30,7 @@ from .schemas import (
     InboundStockRequest,
     LabelInboundRequest,
     LabelOutboundRequest,
+    LabelReInboundRequest,
     OutboundStockRequest,
     PersonnelRequest,
     PrintLabelsRequest,
@@ -59,11 +61,15 @@ from .services import (
     outbound_by_label,
     outbound_stock,
     pull_platform_orders,
+    reinbound_by_label,
     reset_system_data,
     sell_product,
     ship_order,
     update_product,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -155,10 +161,13 @@ async def print_inventory_labels(payload: PrintLabelsRequest) -> dict:
             **result,
         }
     except PrintTemplateNotFound as error:
+        logger.warning("Print labels failed: template not found: %s", error)
         raise HTTPException(status_code=404, detail=str(error)) from error
     except PrinterUnavailable as error:
+        logger.warning("Print labels unavailable: %s", error)
         raise HTTPException(status_code=503, detail=str(error)) from error
     except PrinterError as error:
+        logger.warning("Print labels rejected: %s", error)
         raise HTTPException(status_code=400, detail=str(error)) from error
 
 
@@ -173,8 +182,10 @@ async def print_inventory_label(label_code: str) -> dict:
     except BusinessError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except PrinterUnavailable as error:
+        logger.warning("Print label unavailable: %s", error)
         raise HTTPException(status_code=503, detail=str(error)) from error
     except PrinterError as error:
+        logger.warning("Print label rejected: %s", error)
         raise HTTPException(status_code=400, detail=str(error)) from error
 
 
@@ -190,8 +201,10 @@ async def print_product_inventory_labels(sku_id: str) -> dict:
     except BusinessError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except PrinterUnavailable as error:
+        logger.warning("Print product labels unavailable: %s", error)
         raise HTTPException(status_code=503, detail=str(error)) from error
     except PrinterError as error:
+        logger.warning("Print product labels rejected: %s", error)
         raise HTTPException(status_code=400, detail=str(error)) from error
 
 
@@ -370,6 +383,7 @@ async def inbound_labels(payload: LabelInboundRequest) -> dict:
             sku_id=payload.skuId,
             product_name=payload.productName,
             operator=payload.operator,
+            quality_grade=payload.qualityGrade,
         )
         return {
             **result,
@@ -385,6 +399,22 @@ async def outbound_label(payload: LabelOutboundRequest) -> dict:
         result = outbound_by_label(
             label_code=payload.labelCode,
             reason_id=payload.reasonId,
+            operator=payload.operator,
+            remark=payload.remark,
+        )
+        return {
+            **result,
+            "dashboard": get_dashboard(),
+        }
+    except BusinessError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.post("/api/inventory/labels/reinbound", status_code=201)
+async def reinbound_label(payload: LabelReInboundRequest) -> dict:
+    try:
+        result = reinbound_by_label(
+            label_code=payload.labelCode,
             operator=payload.operator,
             remark=payload.remark,
         )

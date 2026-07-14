@@ -9,6 +9,7 @@ const state = {
   backupStatus: null,
   editingProductSkuId: null,
   inventoryDraftRows: [],
+  inventoryQualityFilter: "all",
   printTemplate: {
     templates: [],
     editorTemplateId: "default",
@@ -389,7 +390,7 @@ function legacyRenderPrintTemplateStatus() {
   }
 
   const availability = status.available ? "SDK 已就绪" : (status.reason || "打印不可用");
-  elements.printTemplateStatus.textContent = `${availability} | ${status.architecture} | PID ${status.pid} / VID ${status.vid}`;
+  elements.printTemplateStatus.textContent = `${availability} | ${status.architecture} | VID ${status.vidHex || status.vid} / PID ${status.pidHex || status.pid}`;
 }
 
 function legacyRenderPrintTemplateMeta(layout) {
@@ -518,13 +519,14 @@ function renderInventorySystem() {
   const engine = state.inventorySystem.engine || {};
   const labelStats = state.inventorySystem.labelStats || {};
   const cards = [
-    ["库存总量", engine.totalStock || 0],
-    ["已剪标出库", labelStats.outbound || 0],
-    ["产品数", engine.skuCount || 0]
+    ["库存总量", engine.totalStock || 0, "all"],
+    ["微瑕数量", labelStats.minorFlaw || 0, "minor_flaw"],
+    ["已剪标出库", labelStats.outbound || 0, "outbound"],
+    ["产品数", engine.skuCount || 0, ""]
   ];
 
-  elements.inventoryEngineCards.innerHTML = cards.map(([label, value]) => `
-    <article>
+  elements.inventoryEngineCards.innerHTML = cards.map(([label, value, filter]) => `
+    <article class="${filter && state.inventoryQualityFilter === filter ? "active-filter" : ""}" ${filter ? `data-inventory-filter="${filter}"` : ""}>
       <span>${label}</span>
       <strong>${value}</strong>
     </article>
@@ -576,11 +578,13 @@ function renderInventory() {
 
 function renderProductLabel(label) {
   const statusText = label.status === "in_stock" ? "在库，标签未剪" : `已出库，${label.outboundReason}`;
+  const qualityGradeName = label.qualityGradeName || "完品";
   return `
-    <article class="label-card ${label.status}">
+    <article class="label-card ${label.status} ${label.qualityGrade === "minor_flaw" ? "minor-flaw" : ""}">
       <div class="label-text">
         <strong>${label.labelCode}</strong>
         <span>${label.productName}</span>
+        <span>${qualityGradeName}</span>
         <span>${statusText}</span>
       </div>
       <img src="${createQrImageUrl(label.labelCode)}" alt="${label.labelCode} 二维码">
@@ -648,10 +652,23 @@ function renderDocuments() {
 }
 
 function getInventoryItems() {
-  return state.products.map((product) => ({
-    product,
-    labels: state.inventoryLabels.filter((label) => label.skuId === product.skuId)
-  }));
+  return state.products
+    .map((product) => {
+      const labels = state.inventoryLabels.filter((label) => {
+        if (label.skuId !== product.skuId) {
+          return false;
+        }
+        if (state.inventoryQualityFilter === "minor_flaw") {
+          return label.qualityGrade === "minor_flaw" && label.status === "in_stock";
+        }
+        if (state.inventoryQualityFilter === "outbound") {
+          return label.status === "outbound";
+        }
+        return true;
+      });
+      return { product, labels };
+    })
+    .filter((item) => state.inventoryQualityFilter === "all" || item.labels.length > 0);
 }
 
 function getListResult(listName, items) {
@@ -802,6 +819,7 @@ function createInventoryDraftRow() {
     id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
     skuId: state.products[0]?.skuId || "",
     qualifiedQuantity: 10,
+    qualityGrade: "perfect",
     operator: personnel[0]?.name || ""
   };
 }
@@ -822,6 +840,13 @@ function renderInventoryDraftRows() {
       <label>
         <span>合格数量</span>
         <input data-inventory-field="qualifiedQuantity" type="number" min="1" step="1" value="${row.qualifiedQuantity}" required>
+      </label>
+      <label>
+        <span>品相</span>
+        <select data-inventory-field="qualityGrade">
+          <option value="perfect" ${row.qualityGrade === "perfect" ? "selected" : ""}>完品</option>
+          <option value="minor_flaw" ${row.qualityGrade === "minor_flaw" ? "selected" : ""}>微瑕</option>
+        </select>
       </label>
       <label>
         <span>入库人</span>
@@ -895,6 +920,7 @@ async function saveInventoryBatch(event) {
           productMode: "existing",
           productName: row.product.name,
           operator: row.operator,
+          qualityGrade: row.qualityGrade || "perfect",
           skuId: row.skuId
         })
       });
@@ -1653,7 +1679,7 @@ function renderPrintTemplateStatus() {
   }
 
   const availability = status.available ? "SDK 已就绪" : (status.reason || "打印不可用");
-  elements.printTemplateStatus.textContent = `${availability} | ${status.architecture} | PID ${status.pid} / VID ${status.vid}`;
+  elements.printTemplateStatus.textContent = `${availability} | ${status.architecture} | VID ${status.vidHex || status.vid} / PID ${status.pidHex || status.pid}`;
 }
 
 function renderPrintTemplateMeta(layout) {
@@ -2330,6 +2356,15 @@ elements.inventoryBatchRows.addEventListener("click", (event) => {
   if (button) {
     removeInventoryDraftRow(button.dataset.inventoryRowRemove);
   }
+});
+elements.inventoryEngineCards.addEventListener("click", (event) => {
+  const card = event.target.closest("[data-inventory-filter]");
+  if (!card) {
+    return;
+  }
+  state.inventoryQualityFilter = card.dataset.inventoryFilter || "all";
+  state.lists.inventory.page = 1;
+  render();
 });
 elements.productList.addEventListener("click", (event) => {
   const button = event.target.closest("[data-product-action]");

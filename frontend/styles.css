@@ -345,6 +345,18 @@ button:disabled {
   border-radius: 8px;
   background: #fbfcfd;
   padding: 12px;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.inventory-engine-grid article[data-inventory-filter] {
+  cursor: pointer;
+}
+
+.inventory-engine-grid article:hover,
+.inventory-engine-grid article.active-filter {
+  border-color: var(--green);
+  box-shadow: 0 8px 20px rgba(31, 118, 102, 0.12);
+  transform: translateY(-1px);
 }
 
 .inventory-engine-grid span {
@@ -566,6 +578,11 @@ button:disabled {
 .label-card.outbound {
   border-color: #e0d7cb;
   background: #faf7f3;
+}
+
+.label-card.minor-flaw {
+  border-color: #d8b76a;
+  background: #fff9eb;
 }
 
 .label-card.empty-label {
@@ -1238,7 +1255,7 @@ td code {
 
 .inventory-batch-row {
   display: grid;
-  grid-template-columns: minmax(220px, 1.3fr) minmax(120px, 0.7fr) minmax(120px, 0.7fr) auto;
+  grid-template-columns: minmax(220px, 1.3fr) minmax(110px, 0.55fr) minmax(110px, 0.55fr) minmax(120px, 0.7fr) auto;
   align-items: end;
   gap: 10px;
   min-inline-size: 0;

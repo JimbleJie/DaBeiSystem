@@ -5,7 +5,7 @@ from typing import Any
 from uuid import uuid4
 
 from .adapters import ADAPTERS, PLATFORMS, random_buyer, utc_now
-from .storage import load_json_state, load_state, save_json_state
+from .storage import load_json_state, load_state, save_json_state, save_state
 
 
 class BusinessError(Exception):
@@ -27,6 +27,10 @@ SHORT_LABEL_CODE_PATTERN = re.compile(r"^\d{4}-\d{3}$")
 LEGACY_RECEIPT_LABEL_PATTERN = re.compile(r"^QR-RCV-\d{14}-(\d+)-(\d{3})$")
 PERSONNEL_STATE_KEY = "personnel"
 DEFAULT_PERSONNEL_NAMES = ("小梅雨", "六一")
+QUALITY_GRADE_NAMES = {
+    "perfect": "完品",
+    "minor_flaw": "微瑕",
+}
 
 
 def export_state() -> dict[str, Any]:
@@ -51,12 +55,46 @@ def load_persisted_state() -> None:
     stock_movements[:] = state.get("stockMovements", [])
     receipts[:] = state.get("receipts", [])
     inventory_labels[:] = state.get("inventoryLabels", [])
-    if migrate_label_codes_to_short():
+    migrated = migrate_label_codes_to_short()
+    if normalize_existing_quality_grades():
+        migrated = True
+    if migrated:
         persist_state()
 
 
 def persist_state() -> None:
     save_state(export_state())
+
+
+def normalize_quality_grade(value: str | None) -> tuple[str, str]:
+    grade = str(value or "perfect").strip()
+    if grade not in QUALITY_GRADE_NAMES:
+        raise BusinessError("请选择完品或微瑕")
+    return grade, QUALITY_GRADE_NAMES[grade]
+
+
+def apply_quality_defaults(item: dict[str, Any]) -> bool:
+    changed = False
+    grade = item.get("qualityGrade") or "perfect"
+    if grade not in QUALITY_GRADE_NAMES:
+        grade = "perfect"
+    grade_name = QUALITY_GRADE_NAMES[grade]
+    if item.get("qualityGrade") != grade:
+        item["qualityGrade"] = grade
+        changed = True
+    if item.get("qualityGradeName") != grade_name:
+        item["qualityGradeName"] = grade_name
+        changed = True
+    return changed
+
+
+def normalize_existing_quality_grades() -> bool:
+    changed = False
+    for label in inventory_labels:
+        changed = apply_quality_defaults(label) or changed
+    for receipt in receipts:
+        changed = apply_quality_defaults(receipt) or changed
+    return changed
 
 
 def normalize_person_name(name: str | None) -> str:
@@ -678,6 +716,7 @@ def inbound_with_labels(
     sku_id: str | None,
     product_name: str | None,
     operator: str | None = None,
+    quality_grade: str | None = None,
 ) -> dict[str, Any]:
     receipt = find_receipt(receipt_id)
     if receipt is None:
@@ -705,6 +744,7 @@ def inbound_with_labels(
     if product is None:
         raise BusinessError("商品不存在")
 
+    grade, grade_name = normalize_quality_grade(quality_grade)
     quantity = receipt["qualifiedQuantity"]
     before_stock = product["centralStock"]
     product["centralStock"] += quantity
@@ -723,6 +763,8 @@ def inbound_with_labels(
             "inboundAt": utc_now(),
             "outboundAt": "",
             "outboundReason": "",
+            "qualityGrade": grade,
+            "qualityGradeName": grade_name,
             "operator": operator or "入库员",
         }
         labels.append(label)
@@ -732,6 +774,8 @@ def inbound_with_labels(
     receipt["skuId"] = product["skuId"]
     receipt["productName"] = product["name"]
     receipt["operator"] = operator or "入库员"
+    receipt["qualityGrade"] = grade
+    receipt["qualityGradeName"] = grade_name
     receipt["labelCodes"] = [label["labelCode"] for label in labels]
     receipt["inboundAt"] = utc_now()
 
@@ -740,7 +784,7 @@ def inbound_with_labels(
         {
             "id": str(uuid4()),
             "type": "label_inbound",
-            "message": f"{product['name']} 打印并绑定 {quantity} 个二维码标签，扫码入库完成",
+            "message": f"{product['name']} {grade_name} 打印并绑定 {quantity} 个二维码标签，扫码入库完成",
             "skuId": product["skuId"],
             "quantity": quantity,
             "createdAt": utc_now(),
@@ -757,7 +801,7 @@ def inbound_with_labels(
         warehouse=product.get("warehouse", "主仓"),
         location=product.get("location", ""),
         reference_no=receipt_id,
-        remark="每个合格品已贴二维码标签",
+        remark=f"每个{grade_name}已贴二维码标签",
     )
 
     persist_state()
@@ -814,6 +858,59 @@ def outbound_by_label(*, label_code: str, reason_id: str, operator: str | None =
         channel=reason,
         reference_no=label_code,
         remark=remark or "装盒前剪掉标签",
+    )
+
+    persist_state()
+    return {
+        "label": label,
+        "product": serialize_product(product),
+        "movement": stock_movements[0],
+    }
+
+
+def reinbound_by_label(*, label_code: str, operator: str | None = None, remark: str | None = None) -> dict[str, Any]:
+    label = find_label(label_code)
+    if label is None:
+        raise BusinessError("二维码标签不存在")
+    if label.get("status") != "outbound":
+        raise BusinessError("该标签未出库，无需重新入库")
+
+    product = find_product(label.get("skuId", ""))
+    if product is None:
+        raise BusinessError("标签对应商品不存在")
+
+    before_stock = product["centralStock"]
+    product["centralStock"] += 1
+    product["updatedAt"] = utc_now()
+    label["status"] = "in_stock"
+    label["outboundAt"] = ""
+    label["outboundReason"] = ""
+    label["reInboundAt"] = utc_now()
+    label["operator"] = operator or "入库员"
+
+    stock_events.insert(
+        0,
+        {
+            "id": str(uuid4()),
+            "type": "label_reinbound",
+            "message": f"标签 {label['labelCode']} 重新入库，{product['name']} 库存加回 1 个",
+            "skuId": product["skuId"],
+            "quantity": 1,
+            "createdAt": utc_now(),
+        },
+    )
+    record_stock_movement(
+        movement_type="re_inbound",
+        sku_id=product["skuId"],
+        quantity=1,
+        operator=operator or "入库员",
+        scene="出库标签重新入库",
+        before_stock=before_stock,
+        after_stock=product["centralStock"],
+        warehouse=product.get("warehouse", "主仓"),
+        location=product.get("location", ""),
+        reference_no=label["labelCode"],
+        remark=remark or "清除原出库状态并恢复在库",
     )
 
     persist_state()
@@ -1138,6 +1235,7 @@ def build_outbound_documents() -> list[dict[str, Any]]:
 
 
 def get_inventory_system() -> dict[str, Any]:
+    normalize_existing_quality_grades()
     total_stock = sum(product["centralStock"] for product in products)
     available = sum(available_stock(product) for product in products)
     frozen = sum(product.get("lockedStock", 0) for product in products)
@@ -1174,6 +1272,10 @@ def get_inventory_system() -> dict[str, Any]:
         "labelStats": {
             "inStock": len([label for label in inventory_labels if label["status"] == "in_stock"]),
             "outbound": len([label for label in inventory_labels if label["status"] == "outbound"]),
+            "minorFlaw": len([
+                label for label in inventory_labels
+                if label.get("qualityGrade") == "minor_flaw" and label.get("status") == "in_stock"
+            ]),
             "pendingReceipts": len([receipt for receipt in receipts if receipt["status"] == "inspected"]),
         },
         "capabilities": [

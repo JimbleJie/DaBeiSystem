@@ -56,6 +56,8 @@ public class MainActivity extends Activity {
     private static final String PAGE_SETTINGS = "settings";
     private static final String PAGE_INBOUND = "inbound";
     private static final String PAGE_OUTBOUND = "outbound";
+    private static final String QUALITY_PERFECT = "perfect";
+    private static final String QUALITY_MINOR_FLAW = "minor_flaw";
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -236,6 +238,10 @@ public class MainActivity extends Activity {
         page.addView(label("选择入库人"));
         page.addView(operatorSpinner);
 
+        Spinner qualitySpinner = spinner(listOf("完品", "微瑕"));
+        page.addView(label("品相"));
+        page.addView(qualitySpinner);
+
         TextView result = bodyText("");
         Button createButton = primaryButton("创建并入库");
         createButton.setOnClickListener(view -> {
@@ -262,6 +268,7 @@ public class MainActivity extends Activity {
             String skuId = product.skuId;
             int qualified = parseInt(qualifiedInput.getText().toString());
             String operator = operatorSpinner.getSelectedItem().toString();
+            String qualityGrade = qualitySpinner.getSelectedItemPosition() == 1 ? QUALITY_MINOR_FLAW : QUALITY_PERFECT;
 
             if (qualified <= 0) {
                 toast("请填写合格数量");
@@ -281,13 +288,14 @@ public class MainActivity extends Activity {
                                 .put("productMode", "existing")
                                 .put("productName", productName)
                                 .put("operator", operator)
+                                .put("qualityGrade", qualityGrade)
                                 .put("skuId", skuId);
                         request("POST", "/inventory/labels/inbound", inboundBody, inboundJson -> {
                             JSONArray qrCodes = inboundJson.optJSONArray("labels");
                             int count = qrCodes == null ? 0 : qrCodes.length();
-                            result.setText(formatInboundResult(inboundJson, count));
-                            toast("入库成功，已创建 " + count + " 个二维码");
-                            refreshDashboard(false);
+                            String detail = formatInboundResult(inboundJson, count);
+                            result.setText(detail);
+                            showCompletionDialog("入库完成", detail);
                         }, error -> toast("入库失败：" + error));
                     } catch (Exception error) {
                         toast("入库参数错误：" + error.getMessage());
@@ -347,15 +355,38 @@ public class MainActivity extends Activity {
                         .put("operator", operatorSpinner.getSelectedItem().toString())
                         .put("remark", remarkInput.getText().toString().trim());
                 request("POST", "/inventory/labels/outbound", body, json -> {
-                    result.setText(formatOutboundResult(json));
-                    toast("出库成功，库存已同步");
-                    refreshDashboard(false);
+                    String detail = formatOutboundResult(json);
+                    result.setText(detail);
+                    showCompletionDialog("出库完成", detail);
                 }, error -> handleOutboundError(error));
             } catch (Exception error) {
                 toast("请求参数错误：" + error.getMessage());
             }
         });
         page.addView(outboundButton);
+
+        Button reinboundButton = secondaryButton("重新入库");
+        reinboundButton.setOnClickListener(view -> {
+            String labelCode = outboundLabelInput.getText().toString().trim();
+            if (labelCode.isEmpty()) {
+                toast("请先扫码");
+                return;
+            }
+            try {
+                JSONObject body = new JSONObject()
+                        .put("labelCode", labelCode)
+                        .put("operator", operatorSpinner.getSelectedItem().toString())
+                        .put("remark", remarkInput.getText().toString().trim());
+                request("POST", "/inventory/labels/reinbound", body, json -> {
+                    String detail = formatReInboundResult(json);
+                    result.setText(detail);
+                    showCompletionDialog("重新入库完成", detail);
+                }, error -> toast("重新入库失败：" + error));
+            } catch (Exception error) {
+                toast("请求参数错误：" + error.getMessage());
+            }
+        });
+        page.addView(reinboundButton);
         page.addView(sectionTitle("出库结果"));
         page.addView(result);
         setContentView(wrap(page));
@@ -611,6 +642,14 @@ public class MainActivity extends Activity {
         StringBuilder builder = new StringBuilder();
         builder.append("入库完成\n");
         builder.append("产品：").append(product == null ? "" : product.optString("name")).append("\n");
+        String qualityGradeName = "";
+        if (qrCodes != null && qrCodes.length() > 0) {
+            JSONObject firstLabel = qrCodes.optJSONObject(0);
+            qualityGradeName = firstLabel == null ? "" : firstLabel.optString("qualityGradeName");
+        }
+        if (!qualityGradeName.isEmpty()) {
+            builder.append("品相：").append(qualityGradeName).append("\n");
+        }
         builder.append("当前库存：").append(product == null ? 0 : product.optInt("availableStock")).append("\n");
         builder.append("二维码数量：").append(count).append("\n\n");
         if (qrCodes != null) {
@@ -629,6 +668,27 @@ public class MainActivity extends Activity {
                 + "原因：" + (label == null ? "" : label.optString("outboundReason")) + "\n"
                 + "产品库存：" + (product == null ? 0 : product.optInt("availableStock")) + "\n"
                 + "状态：已剪标";
+    }
+
+    private String formatReInboundResult(JSONObject json) {
+        JSONObject label = json.optJSONObject("label");
+        JSONObject product = json.optJSONObject("product");
+        return "重新入库完成\n"
+                + "标签：" + (label == null ? "" : label.optString("labelCode")) + "\n"
+                + "产品库存：" + (product == null ? 0 : product.optInt("availableStock")) + "\n"
+                + "状态：未出库";
+    }
+
+    private void showCompletionDialog(String title, String detail) {
+        new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setMessage(detail)
+                .setPositiveButton("确认", (dialog, which) -> {
+                    showHome();
+                    refreshDashboard(true);
+                })
+                .setNegativeButton("取消", (dialog, which) -> refreshDashboard(false))
+                .show();
     }
 
     private void handleOutboundError(String error) {

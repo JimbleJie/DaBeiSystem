@@ -73,11 +73,18 @@ class LabelInboundRequest(BaseModel):
     skuId: str | None = None
     productName: str | None = None
     operator: str | None = None
+    qualityGrade: str = "perfect"
 
 
 class LabelOutboundRequest(BaseModel):
     labelCode: str
     reasonId: str
+    operator: str | None = None
+    remark: str | None = None
+
+
+class LabelReInboundRequest(BaseModel):
+    labelCode: str
     operator: str | None = None
     remark: str | None = None
 

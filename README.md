@@ -100,7 +100,7 @@ PRINT_SDK_DIR="D:\\inventory-system\\printer-sdk\\printSDK"
 
 - 标签尺寸：`30mm x 40mm`
 - 内容：上方二维码，下方产品名称
-- 默认 VID/PID：`10473 / 672`
+- 默认 VID/PID：`10473 / 656`
 
 可调整的环境变量：
 
@@ -114,7 +114,7 @@ PRINT_LABEL_TEXT_Y=225
 PRINT_LABEL_TEXT_SCALE_X=2
 PRINT_LABEL_TEXT_SCALE_Y=2
 PRINT_PRINTER_VID=10473
-PRINT_PRINTER_PID=672
+PRINT_PRINTER_PID=656
 ```
 
 后端接口：

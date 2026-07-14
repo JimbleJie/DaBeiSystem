@@ -10,7 +10,7 @@ from uuid import uuid4
 from .storage import ROOT, delete_state, load_json_state, save_json_state
 
 
-DEFAULT_PRINTER_PID = 672
+DEFAULT_PRINTER_PID = 656
 DEFAULT_PRINTER_VID = 10473
 DEFAULT_LABEL_WIDTH_MM = 30
 DEFAULT_LABEL_HEIGHT_MM = 40
@@ -133,6 +133,8 @@ def get_printer_status(template_id: str | None = None) -> dict[str, Any]:
     enabled = is_printing_enabled()
     available, reason = get_availability()
     template = get_print_template(template_id)
+    pid = get_int_env("PRINT_PRINTER_PID", DEFAULT_PRINTER_PID)
+    vid = get_int_env("PRINT_PRINTER_VID", DEFAULT_PRINTER_VID)
     return {
         "enabled": enabled,
         "available": available,
@@ -141,8 +143,10 @@ def get_printer_status(template_id: str | None = None) -> dict[str, Any]:
         "architecture": platform.architecture()[0],
         "sdkDir": str(get_sdk_dir()),
         "dllPath": str(get_dll_path()),
-        "pid": get_int_env("PRINT_PRINTER_PID", DEFAULT_PRINTER_PID),
-        "vid": get_int_env("PRINT_PRINTER_VID", DEFAULT_PRINTER_VID),
+        "pid": pid,
+        "vid": vid,
+        "pidHex": f"{pid:04X}",
+        "vidHex": f"{vid:04X}",
         "templateId": template["id"],
         "templateName": template["name"],
         "layout": template["layout"],
@@ -538,7 +542,15 @@ class DDPrintSdk:
         self.dll.executePrint.restype = ctypes.c_int
 
     def connect(self) -> None:
-        ensure_success(self.dll.startConnect(self.pid, self.vid), "连接打印机")
+        # DDPrintSDK 1.1.0 expects PID before VID, despite exposing them as printer identifiers.
+        code = self.dll.startConnect(self.pid, self.vid)
+        if code == 0:
+            return
+
+        message = ERROR_MESSAGES.get(code, f"错误码 {code}")
+        raise PrinterUnavailable(
+            f"连接打印机失败：{message}，VID={self.vid}，PID={self.pid}，DLL={self.dll_path}"
+        )
 
     def print_qr_name_label(self, *, label_code: str, product_name: str, layout: dict[str, int], copies: int) -> None:
         if not label_code:
@@ -550,9 +562,9 @@ class DDPrintSdk:
             self.dll.setSize(float(layout["widthMm"]), float(layout["heightMm"])),
             "设置标签尺寸",
         )
-        ensure_success(self.dll.setSpeed(int(layout.get("printSpeed", get_int_env("PRINT_LABEL_SPEED", 8)))), "?????????")
-        ensure_success(self.dll.setDensity(int(layout.get("printDensity", get_int_env("PRINT_LABEL_DENSITY", 4)))), "?????????")
-        ensure_success(self.dll.clearCache(), "?????????")
+        ensure_success(self.dll.setSpeed(int(layout.get("printSpeed", get_int_env("PRINT_LABEL_SPEED", 8)))), "设置打印速度")
+        ensure_success(self.dll.setDensity(int(layout.get("printDensity", get_int_env("PRINT_LABEL_DENSITY", 4)))), "设置打印浓度")
+        ensure_success(self.dll.clearCache(), "清空打印缓存")
         if layout.get("showBarcode", True):
             ensure_success(
                 self.dll.drawBarCode(
