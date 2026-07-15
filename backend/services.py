@@ -97,6 +97,23 @@ def normalize_existing_quality_grades() -> bool:
     return changed
 
 
+def normalize_label_status(label: dict[str, Any]) -> str:
+    return str(label.get("status") or "").strip().lower()
+
+
+def label_has_outbound_trace(label: dict[str, Any]) -> bool:
+    return bool(str(label.get("outboundAt") or "").strip() or str(label.get("outboundReason") or "").strip())
+
+
+def is_label_outbound(label: dict[str, Any]) -> bool:
+    status = normalize_label_status(label)
+    return status in {"outbound", "out_stock", "out-of-stock", "已出库"} or label_has_outbound_trace(label)
+
+
+def is_label_in_stock(label: dict[str, Any]) -> bool:
+    return normalize_label_status(label) == "in_stock" and not label_has_outbound_trace(label)
+
+
 def normalize_person_name(name: str | None) -> str:
     return str(name or "").strip()
 
@@ -580,7 +597,7 @@ def delete_inventory_label(label_code: str) -> dict[str, Any]:
 
     product = find_product(label.get("skuId", ""))
     before_stock = product["centralStock"] if product else 0
-    if product is not None and label.get("status") == "in_stock":
+    if product is not None and is_label_in_stock(label):
         product["centralStock"] = max(product["centralStock"] - 1, 0)
         product["updatedAt"] = utc_now()
 
@@ -598,12 +615,12 @@ def delete_inventory_label(label_code: str) -> dict[str, Any]:
             "type": "delete_label",
             "message": f"二维码标签 {actual_label_code} 已删除",
             "skuId": label.get("skuId", ""),
-            "quantity": -1 if label.get("status") == "in_stock" else 0,
+            "quantity": -1 if is_label_in_stock(label) else 0,
             "createdAt": utc_now(),
         },
     )
 
-    if product is not None and label.get("status") == "in_stock":
+    if product is not None and is_label_in_stock(label):
         record_stock_movement(
             movement_type="delete_label",
             sku_id=product["skuId"],
@@ -816,7 +833,7 @@ def outbound_by_label(*, label_code: str, reason_id: str, operator: str | None =
     label = find_label(label_code)
     if label is None:
         raise BusinessError("二维码标签不存在")
-    if label["status"] != "in_stock":
+    if not is_label_in_stock(label):
         raise BusinessError("该标签已出库，不能重复出库")
 
     product = find_product(label["skuId"])
@@ -872,8 +889,9 @@ def reinbound_by_label(*, label_code: str, operator: str | None = None, remark: 
     label = find_label(label_code)
     if label is None:
         raise BusinessError("二维码标签不存在")
-    if label.get("status") != "outbound":
-        raise BusinessError("该标签未出库，无需重新入库")
+    if not is_label_outbound(label):
+        current_status = label.get("status") or "空"
+        raise BusinessError(f"该标签未出库，无需重新入库（当前状态：{current_status}）")
 
     product = find_product(label.get("skuId", ""))
     if product is None:
@@ -1178,7 +1196,7 @@ def list_print_labels_for_sku(sku_id: str) -> list[dict[str, str]]:
 def mark_labels_outbound_for_sale(*, sku_id: str, quantity: int, reason: str, operator: str) -> None:
     available_labels = [
         label for label in inventory_labels
-        if label["skuId"] == sku_id and label["status"] == "in_stock"
+        if label["skuId"] == sku_id and is_label_in_stock(label)
     ][:quantity]
     for label in available_labels:
         label["status"] = "outbound"
@@ -1228,7 +1246,7 @@ def build_outbound_documents() -> list[dict[str, Any]]:
             "outboundReason": label.get("outboundReason", ""),
         }
         for label in inventory_labels
-        if label.get("status") == "outbound"
+        if is_label_outbound(label)
     ]
 
     return sorted(documents, key=lambda item: item.get("outboundDate", ""), reverse=True)
@@ -1270,11 +1288,11 @@ def get_inventory_system() -> dict[str, Any]:
         "receipts": receipts[:10],
         "labels": inventory_labels[:80],
         "labelStats": {
-            "inStock": len([label for label in inventory_labels if label["status"] == "in_stock"]),
-            "outbound": len([label for label in inventory_labels if label["status"] == "outbound"]),
+            "inStock": len([label for label in inventory_labels if is_label_in_stock(label)]),
+            "outbound": len([label for label in inventory_labels if is_label_outbound(label)]),
             "minorFlaw": len([
                 label for label in inventory_labels
-                if label.get("qualityGrade") == "minor_flaw" and label.get("status") == "in_stock"
+                if label.get("qualityGrade") == "minor_flaw" and is_label_in_stock(label)
             ]),
             "pendingReceipts": len([receipt for receipt in receipts if receipt["status"] == "inspected"]),
         },
