@@ -1,15 +1,15 @@
 param(
     [string]$ProjectDir = "E:\DaBeiSystem-main\DaBeiSystem-main",
-    [string]$NodeDir = "E:\nodejs"
+    [string]$NodeDir = "E:\nodejs",
+    [string]$LogDir = "E:\DaBeiSystem-main\DaBeiSystem-main\log"
 )
 
 $ErrorActionPreference = "Stop"
 
-$RunDir = (Get-Location).Path
 $Timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
-$BackendLog = Join-Path $RunDir "backend-$Timestamp.log"
-$FrontendLog = Join-Path $RunDir "frontend-$Timestamp.log"
-$LauncherLog = Join-Path $RunDir "start-all-$Timestamp.log"
+$BackendLog = Join-Path $LogDir "backend-$Timestamp.log"
+$FrontendLog = Join-Path $LogDir "frontend-$Timestamp.log"
+$LauncherLog = Join-Path $LogDir "start-all-$Timestamp.log"
 
 function Write-LauncherLog {
     param([string]$Message)
@@ -25,6 +25,8 @@ if (-not (Test-Path $ProjectDir)) {
 if (-not (Test-Path $NodeDir)) {
     throw "Node.js directory not found: $NodeDir"
 }
+
+New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
 
 $SharedPrefix = @"
 `$ErrorActionPreference = 'Stop'
@@ -46,6 +48,7 @@ Write-Host 'Frontend log: $FrontendLog'
 
 Write-LauncherLog "Project directory: $ProjectDir"
 Write-LauncherLog "Node.js directory: $NodeDir"
+Write-LauncherLog "Log directory: $LogDir"
 Write-LauncherLog "Backend log: $BackendLog"
 Write-LauncherLog "Frontend log: $FrontendLog"
 
