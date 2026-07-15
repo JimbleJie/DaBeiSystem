@@ -1,9 +1,16 @@
 @echo off
 setlocal EnableExtensions
+title DaBeiSystem Launcher
 
 set "PROJECT_DIR=E:\DaBeiSystem-main\DaBeiSystem-main"
 set "NODE_DIR=E:\nodejs"
 set "LOG_DIR=E:\DaBeiSystem-main\DaBeiSystem-main\log"
+
+cls
+echo ========================================
+echo          DaBeiSystem Launcher
+echo ========================================
+echo.
 
 if not exist "%PROJECT_DIR%" goto missing_project
 if not exist "%NODE_DIR%" goto missing_node
@@ -21,50 +28,63 @@ echo [%DATE% %TIME%] Node.js directory: %NODE_DIR%>>"%START_LOG%"
 echo [%DATE% %TIME%] Backend log: %BACKEND_LOG%>>"%START_LOG%"
 echo [%DATE% %TIME%] Frontend log: %FRONTEND_LOG%>>"%START_LOG%"
 
-call :write_runner "%BACKEND_CMD%" "DaBei Backend" "backend" "%BACKEND_LOG%"
-call :write_runner "%FRONTEND_CMD%" "DaBei Frontend" "frontend" "%FRONTEND_LOG%"
+call :write_runner "%BACKEND_CMD%" "backend" "%BACKEND_LOG%"
+call :write_runner "%FRONTEND_CMD%" "frontend" "%FRONTEND_LOG%"
 
-start "DaBei Backend" cmd /k ""%BACKEND_CMD%""
-start "DaBei Frontend" cmd /k ""%FRONTEND_CMD%""
+echo Starting backend service...
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -WindowStyle Hidden -FilePath $env:ComSpec -ArgumentList '/c', '%BACKEND_CMD%'"
+if errorlevel 1 goto failed
+
+echo Starting frontend service...
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -WindowStyle Hidden -FilePath $env:ComSpec -ArgumentList '/c', '%FRONTEND_CMD%'"
+if errorlevel 1 goto failed
 
 echo.
-echo DaBeiSystem is starting.
-echo Backend and frontend windows have been opened.
-echo Logs are saved in:
-echo %LOG_DIR%
+echo Services are starting in the background.
+echo.
+echo Frontend:
+echo   http://127.0.0.1:5173/
+echo Backend health:
+echo   http://127.0.0.1:4000/api/health
+echo.
+echo Logs:
+echo   %LOG_DIR%
+echo.
+echo This window can be closed after the services start.
+echo To stop services, close node.exe processes from Task Manager.
 echo.
 pause
 goto done
 
 :write_runner
 set "RUNNER_PATH=%~1"
-set "RUNNER_TITLE=%~2"
-set "RUNNER_SCRIPT=%~3"
-set "RUNNER_LOG=%~4"
+set "RUNNER_SCRIPT=%~2"
+set "RUNNER_LOG=%~3"
 >"%RUNNER_PATH%" echo @echo off
->>"%RUNNER_PATH%" echo title %RUNNER_TITLE%
 >>"%RUNNER_PATH%" echo cd /d "%PROJECT_DIR%"
 >>"%RUNNER_PATH%" echo set "Path=%NODE_DIR%;%%Path%%"
->>"%RUNNER_PATH%" echo echo %RUNNER_TITLE% log: %RUNNER_LOG%
 >>"%RUNNER_PATH%" echo echo [%DATE% %TIME%] Starting %RUNNER_SCRIPT%...^>^>"%RUNNER_LOG%"
 >>"%RUNNER_PATH%" echo npm.cmd run %RUNNER_SCRIPT% 1^>^>"%RUNNER_LOG%" 2^>^>^&1
->>"%RUNNER_PATH%" echo echo.
->>"%RUNNER_PATH%" echo echo %RUNNER_TITLE% stopped. Check log:
->>"%RUNNER_PATH%" echo echo %RUNNER_LOG%
->>"%RUNNER_PATH%" echo pause
 exit /b 0
 
 :missing_project
-echo.
 echo Project directory not found:
 echo %PROJECT_DIR%
+echo.
 pause
 goto done
 
 :missing_node
-echo.
 echo Node.js directory not found:
 echo %NODE_DIR%
+echo.
+pause
+goto done
+
+:failed
+echo Failed to start DaBeiSystem. Please check logs in:
+echo %LOG_DIR%
+echo.
 pause
 goto done
 
