@@ -38,6 +38,60 @@ class InventoryStockTests(unittest.TestCase):
         self.assertEqual(product["availableStock"], 3)
         self.assertEqual(dashboard["metrics"]["totalInventory"], 3)
 
+    def test_outbound_labels_do_not_count_toward_total_inventory(self):
+        services.products[:] = [
+            {
+                "skuId": "SKU-TEST",
+                "name": "Test Pot",
+                "centralStock": 3,
+                "lockedStock": 0,
+                "safeStock": 0,
+                "warehouse": "Main",
+            }
+        ]
+        services.inventory_labels[:] = [
+            {
+                "labelCode": "0001-001",
+                "skuId": "SKU-TEST",
+                "productName": "Test Pot",
+                "status": "in_stock",
+                "qualityGrade": "perfect",
+                "qualityGradeName": "Perfect",
+            },
+            {
+                "labelCode": "0001-002",
+                "skuId": "SKU-TEST",
+                "productName": "Test Pot",
+                "status": "in_stock",
+                "qualityGrade": "minor_flaw",
+                "qualityGradeName": "Minor flaw",
+            },
+            {
+                "labelCode": "0001-003",
+                "skuId": "SKU-TEST",
+                "productName": "Test Pot",
+                "status": "outbound",
+                "outboundAt": "2026-07-15T00:00:00+00:00",
+                "outboundReason": "Offline",
+                "qualityGrade": "minor_flaw",
+                "qualityGradeName": "Minor flaw",
+            },
+        ]
+        services.orders[:] = []
+        services.stock_events[:] = []
+        services.stock_movements[:] = []
+        services.receipts[:] = []
+
+        system = services.get_inventory_system()
+        product = services.list_products()[0]
+        dashboard = services.get_dashboard()
+
+        self.assertEqual(system["engine"]["totalStock"], 2)
+        self.assertEqual(system["labelStats"]["inStock"], 2)
+        self.assertEqual(system["labelStats"]["outbound"], 1)
+        self.assertEqual(product["availableStock"], 2)
+        self.assertEqual(dashboard["metrics"]["totalInventory"], 2)
+
     def test_outbound_minor_flaw_label_uses_effective_stock(self):
         services.products[:] = [
             {

@@ -1218,9 +1218,23 @@ def count_in_stock_labels(sku_id: str) -> int:
     ])
 
 
+def count_product_labels(sku_id: str) -> int:
+    return len([
+        label for label in inventory_labels
+        if label.get("skuId") == sku_id
+    ])
+
+
 def effective_central_stock(product: dict[str, Any]) -> int:
     central_stock = int(product.get("centralStock") or 0)
-    return max(central_stock, count_in_stock_labels(product.get("skuId", "")))
+    sku_id = product.get("skuId", "")
+    label_count = count_product_labels(sku_id)
+    in_stock_label_count = count_in_stock_labels(sku_id)
+    if label_count == 0:
+        return central_stock
+    if central_stock <= label_count:
+        return in_stock_label_count
+    return central_stock
 
 
 def build_inbound_documents() -> list[dict[str, Any]]:
