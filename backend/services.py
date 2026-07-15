@@ -405,7 +405,8 @@ def sell_product(
     if available_stock(product) < quantity:
         raise BusinessError(f"{product['name']} 库存不足")
 
-    product["centralStock"] -= quantity
+    before_stock = effective_central_stock(product)
+    product["centralStock"] = max(before_stock - quantity, 0)
     order = create_order(
         platform_id=platform_id,
         sku_id=sku_id,
@@ -436,7 +437,7 @@ def sell_product(
         quantity=quantity,
         operator="系统",
         scene=f"{platform.name}销售出库",
-        before_stock=product["centralStock"] + quantity,
+        before_stock=before_stock,
         after_stock=product["centralStock"],
         warehouse=product.get("warehouse", "主仓"),
         location=product.get("location", "A-01-01"),
@@ -596,9 +597,10 @@ def delete_inventory_label(label_code: str) -> dict[str, Any]:
     actual_label_code = label["labelCode"]
 
     product = find_product(label.get("skuId", ""))
-    before_stock = product["centralStock"] if product else 0
-    if product is not None and is_label_in_stock(label):
-        product["centralStock"] = max(product["centralStock"] - 1, 0)
+    label_was_in_stock = is_label_in_stock(label)
+    before_stock = effective_central_stock(product) if product else 0
+    if product is not None and label_was_in_stock:
+        product["centralStock"] = max(before_stock - 1, 0)
         product["updatedAt"] = utc_now()
 
     inventory_labels.remove(label)
@@ -615,12 +617,12 @@ def delete_inventory_label(label_code: str) -> dict[str, Any]:
             "type": "delete_label",
             "message": f"二维码标签 {actual_label_code} 已删除",
             "skuId": label.get("skuId", ""),
-            "quantity": -1 if is_label_in_stock(label) else 0,
+            "quantity": -1 if label_was_in_stock else 0,
             "createdAt": utc_now(),
         },
     )
 
-    if product is not None and is_label_in_stock(label):
+    if product is not None and label_was_in_stock:
         record_stock_movement(
             movement_type="delete_label",
             sku_id=product["skuId"],
@@ -839,12 +841,12 @@ def outbound_by_label(*, label_code: str, reason_id: str, operator: str | None =
     product = find_product(label["skuId"])
     if product is None:
         raise BusinessError("标签对应商品不存在")
-    if product["centralStock"] <= 0:
+    if available_stock(product) <= 0:
         raise BusinessError("库存不足，不能出库")
 
     reason = LABEL_OUTBOUND_REASONS.get(reason_id, reason_id)
-    before_stock = product["centralStock"]
-    product["centralStock"] -= 1
+    before_stock = effective_central_stock(product)
+    product["centralStock"] = max(before_stock - 1, 0)
     product["updatedAt"] = utc_now()
     label["status"] = "outbound"
     label["outboundAt"] = utc_now()
@@ -897,8 +899,8 @@ def reinbound_by_label(*, label_code: str, operator: str | None = None, remark: 
     if product is None:
         raise BusinessError("标签对应商品不存在")
 
-    before_stock = product["centralStock"]
-    product["centralStock"] += 1
+    before_stock = effective_central_stock(product)
+    product["centralStock"] = before_stock + 1
     product["updatedAt"] = utc_now()
     label["status"] = "in_stock"
     label["outboundAt"] = ""
@@ -962,8 +964,8 @@ def outbound_stock(
 
     channel = next((item for item in PLATFORMS if item.id == channel_id), None)
     channel_name = channel.name if channel else OUTBOUND_CHANNELS.get(channel_id, channel_id)
-    before_stock = product["centralStock"]
-    product["centralStock"] -= quantity
+    before_stock = effective_central_stock(product)
+    product["centralStock"] = max(before_stock - quantity, 0)
     product["updatedAt"] = utc_now()
     outbound_no = f"OUT-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{random.randint(100, 999)}"
 
@@ -1206,7 +1208,19 @@ def mark_labels_outbound_for_sale(*, sku_id: str, quantity: int, reason: str, op
 
 
 def available_stock(product: dict[str, Any]) -> int:
-    return max(product["centralStock"] - product["lockedStock"], 0)
+    return max(effective_central_stock(product) - int(product.get("lockedStock") or 0), 0)
+
+
+def count_in_stock_labels(sku_id: str) -> int:
+    return len([
+        label for label in inventory_labels
+        if label.get("skuId") == sku_id and is_label_in_stock(label)
+    ])
+
+
+def effective_central_stock(product: dict[str, Any]) -> int:
+    central_stock = int(product.get("centralStock") or 0)
+    return max(central_stock, count_in_stock_labels(product.get("skuId", "")))
 
 
 def build_inbound_documents() -> list[dict[str, Any]]:
@@ -1254,7 +1268,7 @@ def build_outbound_documents() -> list[dict[str, Any]]:
 
 def get_inventory_system() -> dict[str, Any]:
     normalize_existing_quality_grades()
-    total_stock = sum(product["centralStock"] for product in products)
+    total_stock = sum(effective_central_stock(product) for product in products)
     available = sum(available_stock(product) for product in products)
     frozen = sum(product.get("lockedStock", 0) for product in products)
     in_transit = sum(product.get("inTransitStock", 0) for product in products)
