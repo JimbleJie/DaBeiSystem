@@ -577,6 +577,7 @@ function renderInventory() {
 }
 
 function renderProductLabel(label) {
+  const isOutbound = label.status === "outbound";
   const statusText = label.status === "in_stock" ? "在库，标签未剪" : `已出库，${label.outboundReason}`;
   const qualityGradeName = label.qualityGradeName || "完品";
   return `
@@ -590,6 +591,7 @@ function renderProductLabel(label) {
       <img src="${createQrImageUrl(label.labelCode)}" alt="${label.labelCode} 二维码">
       <div class="label-actions">
         <button class="ghost-button label-print-button" type="button" data-print-action="label" data-label-code="${label.labelCode}">打印</button>
+        ${isOutbound ? `<button class="ghost-button label-reinbound-button" type="button" data-label-action="reinbound" data-label-code="${label.labelCode}">重新入库</button>` : ""}
         <button class="danger-button label-delete-button" type="button" data-label-action="delete" data-label-code="${label.labelCode}">删除</button>
       </div>
     </article>
@@ -1170,6 +1172,30 @@ async function deleteLabel(labelCode) {
     Object.assign(state, result.dashboard);
     render();
     setMessage("标签已删除，库存已同步");
+  } catch (error) {
+    setMessage(error.message);
+  }
+}
+
+async function reinboundLabel(labelCode) {
+  if (!window.confirm(`确认将单件标签「${labelCode}」重新入库？后台会清除原出库状态并恢复为未出库。`)) {
+    return;
+  }
+
+  try {
+    const result = await request("/inventory/labels/reinbound", {
+      method: "POST",
+      body: JSON.stringify({
+        labelCode,
+        operator: "后台",
+        remark: "后台库存管理重新入库"
+      })
+    });
+    Object.assign(state, result.dashboard);
+    state.inventoryQualityFilter = "all";
+    state.lists.inventory.page = 1;
+    render();
+    setMessage(`标签 ${labelCode} 已重新入库`);
   } catch (error) {
     setMessage(error.message);
   }
@@ -2453,6 +2479,12 @@ elements.personnelList?.addEventListener("click", (event) => {
   deletePersonnel(button.dataset.personnelDelete);
 });
 elements.inventoryList.addEventListener("click", (event) => {
+  const reinboundButton = event.target.closest("[data-label-action='reinbound']");
+  if (reinboundButton) {
+    reinboundLabel(reinboundButton.dataset.labelCode);
+    return;
+  }
+
   const deleteButton = event.target.closest("[data-label-action='delete']");
   if (deleteButton) {
     deleteLabel(deleteButton.dataset.labelCode);

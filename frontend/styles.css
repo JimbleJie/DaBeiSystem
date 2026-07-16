@@ -606,7 +606,8 @@ button:disabled {
 }
 
 .label-delete-button,
-.label-print-button {
+.label-print-button,
+.label-reinbound-button {
   min-height: 34px;
   padding: 0 10px;
 }
