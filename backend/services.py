@@ -187,12 +187,11 @@ def delete_personnel(person_id: str) -> dict[str, str]:
     return removed
 
 OUTBOUND_CHANNELS = {
-    "taobao": "淘宝渠道",
-    "xiaohongshu": "小红书渠道",
-    "distributor": "经销商渠道",
-    "video": "视频号渠道",
-    "private_domain": "私域渠道",
-    "damage": "破损出库",
+    "dongchadi": "懂茶帝发货",
+    "offline_private": "线下发货（私人）",
+    "online_platform": "线上平台发货",
+    "distributor_order": "经销商订单",
+    "live_sample": "直播间样品",
 }
 
 OUTBOUND_TYPES = {
@@ -204,13 +203,10 @@ OUTBOUND_TYPES = {
 
 LABEL_OUTBOUND_REASONS = {
     "dongchadi": "懂茶帝发货",
+    "offline_private": "线下发货（私人）",
     "online_platform": "线上平台发货",
-    "taobao": "淘宝发货",
-    "douyin": "抖音发货",
-    "xiaohongshu": "小红书发货",
-    "wechat": "微信电商发货",
-    "private_domain": "私域发货",
-    "offline": "线下发货",
+    "distributor_order": "经销商订单",
+    "live_sample": "直播间样品",
 }
 
 

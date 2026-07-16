@@ -766,8 +766,14 @@ public class MainActivity extends Activity {
             names.add(reason.name);
         }
         if (names.isEmpty()) {
-            names.add("懂茶帝发货");
             reasons.add(new ReasonOption("dongchadi", "懂茶帝发货"));
+            reasons.add(new ReasonOption("offline_private", "线下发货（私人）"));
+            reasons.add(new ReasonOption("online_platform", "线上平台发货"));
+            reasons.add(new ReasonOption("distributor_order", "经销商订单"));
+            reasons.add(new ReasonOption("live_sample", "直播间样品"));
+            for (ReasonOption reason : reasons) {
+                names.add(reason.name);
+            }
         }
         return names;
     }

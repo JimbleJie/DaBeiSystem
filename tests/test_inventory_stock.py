@@ -121,13 +121,28 @@ class InventoryStockTests(unittest.TestCase):
 
         result = services.outbound_by_label(
             label_code="0001-001",
-            reason_id="offline",
+            reason_id="offline_private",
             operator="Tester",
         )
 
         self.assertEqual(result["label"]["status"], "outbound")
+        self.assertEqual(result["label"]["outboundReason"], "线下发货（私人）")
         self.assertEqual(result["product"]["availableStock"], 0)
         self.assertEqual(services.products[0]["centralStock"], 0)
+
+    def test_outbound_channel_options_are_limited_to_configured_reasons(self):
+        expected = [
+            {"id": "dongchadi", "name": "懂茶帝发货"},
+            {"id": "offline_private", "name": "线下发货（私人）"},
+            {"id": "online_platform", "name": "线上平台发货"},
+            {"id": "distributor_order", "name": "经销商订单"},
+            {"id": "live_sample", "name": "直播间样品"},
+        ]
+
+        system = services.get_inventory_system()
+
+        self.assertEqual(system["labelOutboundReasons"], expected)
+        self.assertEqual(system["outboundChannels"], expected)
 
     def seed_product_with_stale_stock(self):
         services.products[:] = [
