@@ -771,6 +771,7 @@ public class MainActivity extends Activity {
             reasons.add(new ReasonOption("online_platform", "线上平台发货"));
             reasons.add(new ReasonOption("distributor_order", "经销商订单"));
             reasons.add(new ReasonOption("live_sample", "直播间样品"));
+            reasons.add(new ReasonOption("damage", "破损出库"));
             for (ReasonOption reason : reasons) {
                 names.add(reason.name);
             }

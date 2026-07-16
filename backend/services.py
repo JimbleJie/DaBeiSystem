@@ -192,6 +192,7 @@ OUTBOUND_CHANNELS = {
     "online_platform": "线上平台发货",
     "distributor_order": "经销商订单",
     "live_sample": "直播间样品",
+    "damage": "破损出库",
 }
 
 OUTBOUND_TYPES = {
@@ -207,6 +208,7 @@ LABEL_OUTBOUND_REASONS = {
     "online_platform": "线上平台发货",
     "distributor_order": "经销商订单",
     "live_sample": "直播间样品",
+    "damage": "破损出库",
 }
 
 

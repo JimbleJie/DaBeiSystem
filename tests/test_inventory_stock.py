@@ -137,6 +137,7 @@ class InventoryStockTests(unittest.TestCase):
             {"id": "online_platform", "name": "线上平台发货"},
             {"id": "distributor_order", "name": "经销商订单"},
             {"id": "live_sample", "name": "直播间样品"},
+            {"id": "damage", "name": "破损出库"},
         ]
 
         system = services.get_inventory_system()
