@@ -180,6 +180,27 @@ class InventoryStockTests(unittest.TestCase):
         self.assertEqual(result["label"]["qualityGradeName"], "微瑕")
         self.assertEqual(result["product"]["availableStock"], 0)
 
+    def test_inbound_does_not_create_new_product(self):
+        services.products[:] = []
+        services.inventory_labels[:] = []
+        services.orders[:] = []
+        services.stock_events[:] = []
+        services.stock_movements[:] = []
+        services.receipts[:] = []
+        receipt = services.inspect_receipt(product_name="New Product", qualified_quantity=1)
+
+        with self.assertRaises(services.BusinessError) as error:
+            services.inbound_with_labels(
+                receipt_id=receipt["receiptId"],
+                product_mode="new",
+                sku_id=None,
+                product_name="New Product",
+            )
+
+        self.assertIn("只支持选择已有产品", str(error.exception))
+        self.assertEqual(len(services.products), 0)
+        self.assertEqual(len(services.inventory_labels), 0)
+
     def seed_product_with_stale_stock(self):
         services.products[:] = [
             {

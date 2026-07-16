@@ -767,21 +767,8 @@ def inbound_with_labels(
     if receipt["status"] == "inbound":
         raise BusinessError("该批次已入库")
 
-    if product_mode == "new":
-        created = create_product(
-            {
-                "name": product_name or receipt["productName"],
-                "spec": "标准款",
-                "unit": "个",
-                "category": "壶",
-                "initialStock": 0,
-                "safeStock": 2,
-                "operator": operator or "入库员",
-            }
-        )
-        sku_id = created["skuId"]
-    elif not sku_id:
-        raise BusinessError("请选择旧产品或创建新品")
+    if product_mode != "existing" or not sku_id:
+        raise BusinessError("入库只支持选择已有产品，请先在产品管理创建产品")
 
     product = find_product(sku_id)
     if product is None:
