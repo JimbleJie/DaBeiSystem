@@ -1025,12 +1025,14 @@ async function saveProduct(event) {
     if (result.dashboard) {
       Object.assign(state, result.dashboard);
     }
+    if (!isEditing) {
+      state.lists.products.search = "";
+      state.lists.products.page = 1;
+      elements.productsSearch.value = "";
+    }
     closeProductModal();
     render();
     setMessage(isEditing ? "产品已更新" : "产品已创建");
-    fetchDashboard().catch((error) => {
-      setMessage(`${isEditing ? "产品已更新" : "产品已创建"}，但自动刷新失败：${error.message}`);
-    });
   } catch (error) {
     const recovered = await recoverProductSaveAfterNetworkError({ name, isEditing, editingSkuId, error });
     if (recovered) {
@@ -1078,9 +1080,6 @@ async function deleteProduct(skuId) {
     }
     render();
     setMessage("产品已删除");
-    fetchDashboard().catch((error) => {
-      setMessage(`产品已删除，但自动刷新失败：${error.message}`);
-    });
   } catch (error) {
     const recovered = await recoverProductDeleteAfterNetworkError({ skuId, error });
     if (recovered) {
