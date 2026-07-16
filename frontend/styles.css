@@ -1227,6 +1227,12 @@ td code {
   font-size: 12px;
 }
 
+.inventory-form label small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .product-form input,
 .inventory-form input,
 .inventory-form select {

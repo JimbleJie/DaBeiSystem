@@ -813,11 +813,44 @@ function closeInventoryModal() {
   state.inventoryDraftRows = [];
 }
 
+function formatInventoryProductOption(product) {
+  const stock = Number(product.availableStock ?? product.centralStock ?? 0);
+  return `${product.name} · ${product.skuId} · ${stock}件`;
+}
+
+function getInventoryProductMatches(query) {
+  const normalizedQuery = String(query || "").trim().toLocaleLowerCase();
+  return state.products.filter((product) => {
+    const label = formatInventoryProductOption(product).toLocaleLowerCase();
+    return !normalizedQuery
+      || label.includes(normalizedQuery)
+      || String(product.name || "").toLocaleLowerCase().includes(normalizedQuery)
+      || String(product.skuId || "").toLocaleLowerCase().includes(normalizedQuery);
+  });
+}
+
+function resolveInventoryProductSelection(text) {
+  const normalized = String(text || "").trim();
+  if (!normalized) {
+    return null;
+  }
+  return state.products.find((product) => {
+    const label = formatInventoryProductOption(product);
+    return normalized === label
+      || normalized === product.name
+      || normalized === product.skuId
+      || normalized.startsWith(`${product.name} · `)
+      || normalized.includes(` · ${product.skuId} · `);
+  }) || null;
+}
+
 function createInventoryDraftRow() {
   const personnel = getPersonnelOptions();
+  const product = state.products[0] || null;
   return {
     id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    skuId: state.products[0]?.skuId || "",
+    skuId: product?.skuId || "",
+    productQuery: product ? formatInventoryProductOption(product) : "",
     qualifiedQuantity: 10,
     qualityGrade: "perfect",
     operator: personnel[0]?.name || ""
@@ -831,11 +864,21 @@ function renderInventoryDraftRows() {
       <legend>库存 ${index + 1}</legend>
       <label>
         <span>选择产品</span>
-        <select data-inventory-field="skuId" required>
+        <input
+          data-inventory-field="productQuery"
+          type="search"
+          list="inventoryProductOptions-${escapeHtml(row.id)}"
+          value="${escapeHtml(row.productQuery || "")}"
+          autocomplete="off"
+          required
+          placeholder="输入名称或 SKU 搜索"
+        >
+        <datalist id="inventoryProductOptions-${escapeHtml(row.id)}">
           ${state.products.map((product) => `
-            <option value="${product.skuId}" ${product.skuId === row.skuId ? "selected" : ""}>${product.name} · ${product.skuId}</option>
+            <option value="${escapeHtml(formatInventoryProductOption(product))}"></option>
           `).join("")}
-        </select>
+        </datalist>
+        <small>输入产品名称或 SKU 可模糊搜索，点击候选项选择</small>
       </label>
       <label>
         <span>合格数量</span>
@@ -866,6 +909,12 @@ function updateInventoryDraftRow(rowId, field, value) {
   if (!row) {
     return;
   }
+  if (field === "productQuery") {
+    const product = resolveInventoryProductSelection(value);
+    row.productQuery = value;
+    row.skuId = product?.skuId || "";
+    return;
+  }
   row[field] = field === "qualifiedQuantity" ? Number(value) : value;
 }
 
@@ -889,14 +938,30 @@ async function saveInventoryBatch(event) {
     return;
   }
 
-  const rows = state.inventoryDraftRows.map((row) => ({
-    ...row,
-    product: state.products.find((product) => product.skuId === row.skuId),
-    qualifiedQuantity: Number(row.qualifiedQuantity)
-  }));
-  const invalidRow = rows.find((row) => !row.product || !Number.isInteger(row.qualifiedQuantity) || row.qualifiedQuantity <= 0);
+  const rows = state.inventoryDraftRows.map((row) => {
+    let product = state.products.find((item) => item.skuId === row.skuId) || resolveInventoryProductSelection(row.productQuery);
+    if (!product) {
+      const matches = getInventoryProductMatches(row.productQuery);
+      product = matches.length === 1 ? matches[0] : null;
+    }
+    if (product) {
+      row.skuId = product.skuId;
+      row.productQuery = formatInventoryProductOption(product);
+    }
+    return {
+      ...row,
+      product,
+      qualifiedQuantity: Number(row.qualifiedQuantity)
+    };
+  });
+  const missingProductRow = rows.find((row) => !row.product);
+  if (missingProductRow) {
+    setMessage("请搜索并选择一个产品");
+    return;
+  }
+  const invalidRow = rows.find((row) => !Number.isInteger(row.qualifiedQuantity) || row.qualifiedQuantity <= 0);
   if (invalidRow) {
-    setMessage("请检查产品和合格数量");
+    setMessage("请检查合格数量");
     return;
   }
 
