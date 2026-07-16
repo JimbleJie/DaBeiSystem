@@ -59,6 +59,14 @@ public class MainActivity extends Activity {
     private static final String PAGE_OUTBOUND = "outbound";
     private static final String QUALITY_PERFECT = "perfect";
     private static final String QUALITY_MINOR_FLAW = "minor_flaw";
+    private static final String[][] OUTBOUND_REASON_OPTIONS = {
+            {"dongchadi", "懂茶帝发货"},
+            {"offline_private", "线下发货（私人）"},
+            {"online_platform", "线上平台发货"},
+            {"distributor_order", "经销商订单"},
+            {"live_sample", "直播间样品"},
+            {"damage", "破损出库"},
+    };
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -551,9 +559,12 @@ public class MainActivity extends Activity {
             if (reasonArray != null) {
                 for (int i = 0; i < reasonArray.length(); i++) {
                     JSONObject item = reasonArray.optJSONObject(i);
-                    reasons.add(new ReasonOption(item.optString("id"), item.optString("name")));
+                    if (item != null) {
+                        addOutboundReasonIfAllowed(item.optString("id"), item.optString("name"));
+                    }
                 }
             }
+            ensureOutboundReasons();
 
             JSONArray personnelArray = system.optJSONArray("personnel");
             if (personnelArray != null) {
@@ -788,6 +799,39 @@ public class MainActivity extends Activity {
         toast("出库失败：" + error);
     }
 
+    private void addOutboundReasonIfAllowed(String id, String name) {
+        String allowedName = outboundReasonName(id);
+        if (allowedName.isEmpty() || hasOutboundReason(id)) {
+            return;
+        }
+        reasons.add(new ReasonOption(id, allowedName));
+    }
+
+    private void ensureOutboundReasons() {
+        reasons.clear();
+        for (String[] option : OUTBOUND_REASON_OPTIONS) {
+            reasons.add(new ReasonOption(option[0], option[1]));
+        }
+    }
+
+    private boolean hasOutboundReason(String id) {
+        for (ReasonOption reason : reasons) {
+            if (reason.id.equals(id)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String outboundReasonName(String id) {
+        for (String[] option : OUTBOUND_REASON_OPTIONS) {
+            if (option[0].equals(id)) {
+                return option[1];
+            }
+        }
+        return "";
+    }
+
     private List<String> productNames() {
         List<String> names = new ArrayList<>();
         for (ProductOption product : products) {
@@ -847,20 +891,10 @@ public class MainActivity extends Activity {
     }
 
     private List<String> reasonNames() {
+        ensureOutboundReasons();
         List<String> names = new ArrayList<>();
         for (ReasonOption reason : reasons) {
             names.add(reason.name);
-        }
-        if (names.isEmpty()) {
-            reasons.add(new ReasonOption("dongchadi", "懂茶帝发货"));
-            reasons.add(new ReasonOption("offline_private", "线下发货（私人）"));
-            reasons.add(new ReasonOption("online_platform", "线上平台发货"));
-            reasons.add(new ReasonOption("distributor_order", "经销商订单"));
-            reasons.add(new ReasonOption("live_sample", "直播间样品"));
-            reasons.add(new ReasonOption("damage", "破损出库"));
-            for (ReasonOption reason : reasons) {
-                names.add(reason.name);
-            }
         }
         return names;
     }
