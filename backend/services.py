@@ -1,6 +1,8 @@
 import random
 import re
+import threading
 from datetime import datetime, timedelta, timezone
+from functools import wraps
 from typing import Any
 from uuid import uuid4
 
@@ -22,6 +24,7 @@ stock_events: list[dict[str, Any]] = []
 stock_movements: list[dict[str, Any]] = []
 receipts: list[dict[str, Any]] = []
 inventory_labels: list[dict[str, Any]] = []
+_state_lock = threading.RLock()
 
 SHORT_LABEL_CODE_PATTERN = re.compile(r"^\d{4}-\d{3}$")
 LEGACY_RECEIPT_LABEL_PATTERN = re.compile(r"^QR-RCV-\d{14}-(\d+)-(\d{3})$")
@@ -31,6 +34,15 @@ QUALITY_GRADE_NAMES = {
     "perfect": "完品",
     "minor_flaw": "微瑕",
 }
+
+
+def with_state_lock(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        with _state_lock:
+            return func(*args, **kwargs)
+
+    return wrapper
 
 
 def export_state() -> dict[str, Any]:
@@ -62,6 +74,7 @@ def load_persisted_state() -> None:
         persist_state()
 
 
+@with_state_lock
 def persist_state() -> None:
     save_state(export_state())
 
@@ -158,6 +171,7 @@ def list_personnel() -> list[dict[str, str]]:
     return get_personnel()
 
 
+@with_state_lock
 def create_personnel(name: str) -> dict[str, str]:
     normalized_name = normalize_person_name(name)
     if not normalized_name:
@@ -173,6 +187,7 @@ def create_personnel(name: str) -> dict[str, str]:
     return person
 
 
+@with_state_lock
 def delete_personnel(person_id: str) -> dict[str, str]:
     personnel = get_personnel()
     if len(personnel) <= 1:
@@ -347,14 +362,17 @@ def list_platforms() -> list[dict[str, str]]:
     return [platform.__dict__ for platform in PLATFORMS]
 
 
+@with_state_lock
 def list_products() -> list[dict[str, Any]]:
     return [serialize_product(product) for product in products]
 
 
+@with_state_lock
 def list_orders() -> list[dict[str, Any]]:
     return [serialize_order(order) for order in orders]
 
 
+@with_state_lock
 def get_dashboard() -> dict[str, Any]:
     return {
         "platforms": list_platforms(),
@@ -378,6 +396,7 @@ def get_dashboard() -> dict[str, Any]:
     }
 
 
+@with_state_lock
 def sell_product(
     *,
     platform_id: str,
@@ -452,6 +471,7 @@ def sell_product(
     return order
 
 
+@with_state_lock
 def create_product(payload: dict[str, Any]) -> dict[str, Any]:
     sku_id = payload.get("skuId") or generate_sku_id(payload["name"])
 
@@ -518,6 +538,7 @@ def create_product(payload: dict[str, Any]) -> dict[str, Any]:
     return serialize_product(product)
 
 
+@with_state_lock
 def update_product(sku_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     product = find_product(sku_id)
     if product is None:
@@ -561,6 +582,7 @@ def update_product(sku_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     return serialize_product(product)
 
 
+@with_state_lock
 def delete_product(sku_id: str) -> dict[str, Any]:
     product = find_product(sku_id)
     if product is None:
@@ -588,6 +610,7 @@ def delete_product(sku_id: str) -> dict[str, Any]:
     return serialize_product(product)
 
 
+@with_state_lock
 def delete_inventory_label(label_code: str) -> dict[str, Any]:
     label = find_label(label_code)
     if label is None:
@@ -641,6 +664,7 @@ def delete_inventory_label(label_code: str) -> dict[str, Any]:
     }
 
 
+@with_state_lock
 def inbound_stock(
     *,
     sku_id: str,
@@ -703,9 +727,10 @@ def inbound_stock(
     return serialize_product(product)
 
 
+@with_state_lock
 def inspect_receipt(*, product_name: str, qualified_quantity: int, inspector: str | None = None) -> dict[str, Any]:
     receipt = {
-        "receiptId": f"RCV-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{random.randint(100, 999)}",
+        "receiptId": generate_receipt_id(),
         "productName": product_name,
         "qualifiedQuantity": qualified_quantity,
         "status": "inspected",
@@ -726,6 +751,7 @@ def inspect_receipt(*, product_name: str, qualified_quantity: int, inspector: st
     return receipt
 
 
+@with_state_lock
 def inbound_with_labels(
     *,
     receipt_id: str,
@@ -829,6 +855,7 @@ def inbound_with_labels(
     }
 
 
+@with_state_lock
 def outbound_by_label(*, label_code: str, reason_id: str, operator: str | None = None, remark: str | None = None) -> dict[str, Any]:
     label = find_label(label_code)
     if label is None:
@@ -885,6 +912,7 @@ def outbound_by_label(*, label_code: str, reason_id: str, operator: str | None =
     }
 
 
+@with_state_lock
 def reinbound_by_label(*, label_code: str, operator: str | None = None, remark: str | None = None) -> dict[str, Any]:
     label = find_label(label_code)
     if label is None:
@@ -939,6 +967,7 @@ def reinbound_by_label(*, label_code: str, operator: str | None = None, remark: 
     }
 
 
+@with_state_lock
 def outbound_stock(
     *,
     sku_id: str,
@@ -1043,6 +1072,7 @@ async def pull_platform_orders(platform_id: str | None = None) -> dict[str, Any]
     }
 
 
+@with_state_lock
 def ship_order(order_id: str) -> dict[str, Any]:
     order = find_order(order_id)
 
@@ -1074,6 +1104,7 @@ async def get_logistics(order_id: str) -> dict[str, Any]:
     }
 
 
+@with_state_lock
 def reset_system_data() -> dict[str, Any]:
     products.clear()
     products.extend(_initial_products())
@@ -1175,6 +1206,7 @@ def get_print_label(label_code: str) -> dict[str, str]:
     }
 
 
+@with_state_lock
 def get_inventory_label(label_code: str) -> dict[str, Any]:
     label = find_label(label_code)
     if label is None:
@@ -1294,6 +1326,7 @@ def build_outbound_documents() -> list[dict[str, Any]]:
     return sorted(documents, key=lambda item: item.get("outboundDate", ""), reverse=True)
 
 
+@with_state_lock
 def get_inventory_system() -> dict[str, Any]:
     normalize_existing_quality_grades()
     total_stock = sum(effective_central_stock(product) for product in products)
@@ -1430,6 +1463,14 @@ def record_stock_movement(
 def generate_sku_id(name: str) -> str:
     prefix = "".join(ch for ch in name.upper() if ch.isalnum())[:3] or "SKU"
     return f"{prefix}-{random.randint(1000, 9999)}"
+
+
+def generate_receipt_id() -> str:
+    for _ in range(100):
+        candidate = f"RCV-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}-{random.randint(1000, 9999)}"
+        if find_receipt(candidate) is None:
+            return candidate
+    return f"RCV-{uuid4().hex}"
 
 
 def generate_barcode() -> str:
