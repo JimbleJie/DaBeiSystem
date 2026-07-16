@@ -1175,6 +1175,22 @@ def get_print_label(label_code: str) -> dict[str, str]:
     }
 
 
+def get_inventory_label(label_code: str) -> dict[str, Any]:
+    label = find_label(label_code)
+    if label is None:
+        raise BusinessError("标签不存在")
+    apply_quality_defaults(label)
+    product = find_product(label.get("skuId", ""))
+    status_name = "在库，标签未剪" if is_label_in_stock(label) else "已出库"
+    return {
+        "label": {
+            **label,
+            "statusName": status_name,
+        },
+        "product": serialize_product(product) if product else None,
+    }
+
+
 def list_print_labels_for_sku(sku_id: str) -> list[dict[str, str]]:
     product = find_product(sku_id)
     if product is None:

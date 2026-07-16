@@ -40,6 +40,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -68,6 +69,7 @@ public class MainActivity extends Activity {
     private final List<String> pageStack = new ArrayList<>();
     private JSONObject dashboard;
     private EditText outboundLabelInput;
+    private TextView outboundLabelStatus;
     private String currentPage = PAGE_HOME;
 
     @Override
@@ -101,7 +103,9 @@ public class MainActivity extends Activity {
                 return;
             }
             if (outboundLabelInput != null) {
-                outboundLabelInput.setText(result.getContents().trim());
+                String labelCode = result.getContents().trim();
+                outboundLabelInput.setText(labelCode);
+                fetchOutboundLabelStatus(labelCode);
             }
             toast("扫码成功");
             return;
@@ -112,6 +116,7 @@ public class MainActivity extends Activity {
     private void showHome() {
         currentPage = PAGE_HOME;
         outboundLabelInput = null;
+        outboundLabelStatus = null;
         pageStack.clear();
         LinearLayout page = pageRoot();
         page.addView(title("大北库存", "连接后台后执行入库、出库和库存展示"));
@@ -144,6 +149,7 @@ public class MainActivity extends Activity {
     private void showSettings() {
         currentPage = PAGE_SETTINGS;
         outboundLabelInput = null;
+        outboundLabelStatus = null;
         LinearLayout page = pageRoot();
         page.addView(title("设置", "配置后台 IP、端口和 API 路径"));
         page.addView(backButton());
@@ -193,6 +199,7 @@ public class MainActivity extends Activity {
     private void showInbound() {
         currentPage = PAGE_INBOUND;
         outboundLabelInput = null;
+        outboundLabelStatus = null;
         LinearLayout page = pageRoot();
         page.addView(title("入库", "选择后台已有产品，录入合格数量后创建二维码并入库"));
         page.addView(backButton());
@@ -322,6 +329,8 @@ public class MainActivity extends Activity {
         outboundLabelInput.setFocusableInTouchMode(false);
         page.addView(label("扫码标签"));
         page.addView(outboundLabelInput);
+        outboundLabelStatus = bodyText("当前状态：请先扫码");
+        page.addView(outboundLabelStatus);
 
         Button scanButton = secondaryButton("扫码出库");
         scanButton.setOnClickListener(view -> startQrScan());
@@ -357,8 +366,12 @@ public class MainActivity extends Activity {
                 request("POST", "/inventory/labels/outbound", body, json -> {
                     String detail = formatOutboundResult(json);
                     result.setText(detail);
+                    updateOutboundLabelStatus(json);
                     showCompletionDialog("出库完成", detail);
-                }, error -> handleOutboundError(error));
+                }, error -> {
+                    fetchOutboundLabelStatus(labelCode);
+                    handleOutboundError(error);
+                });
             } catch (Exception error) {
                 toast("请求参数错误：" + error.getMessage());
             }
@@ -380,8 +393,12 @@ public class MainActivity extends Activity {
                 request("POST", "/inventory/labels/reinbound", body, json -> {
                     String detail = formatReInboundResult(json);
                     result.setText(detail);
+                    updateOutboundLabelStatus(json);
                     showCompletionDialog("重新入库完成", detail);
-                }, error -> toast("重新入库失败：" + error));
+                }, error -> {
+                    fetchOutboundLabelStatus(labelCode);
+                    toast("重新入库失败：" + error);
+                });
             } catch (Exception error) {
                 toast("请求参数错误：" + error.getMessage());
             }
@@ -477,6 +494,7 @@ public class MainActivity extends Activity {
     private void showLoadingPage(String page) {
         currentPage = page;
         outboundLabelInput = null;
+        outboundLabelStatus = null;
         LinearLayout layout = pageRoot();
         layout.addView(title(pageTitle(page), "正在刷新后台数据，请稍候"));
         layout.addView(backButton());
@@ -656,6 +674,74 @@ public class MainActivity extends Activity {
             for (int i = 0; i < qrCodes.length(); i++) {
                 builder.append(qrCodes.optJSONObject(i).optString("labelCode")).append("\n");
             }
+        }
+        return builder.toString();
+    }
+
+    private void fetchOutboundLabelStatus(String labelCode) {
+        if (labelCode == null || labelCode.trim().isEmpty()) {
+            return;
+        }
+        if (outboundLabelStatus != null) {
+            outboundLabelStatus.setText("当前状态：正在查询后台状态...");
+        }
+        try {
+            String encodedCode = URLEncoder.encode(labelCode.trim(), StandardCharsets.UTF_8.name()).replace("+", "%20");
+            request("GET", "/inventory/labels/" + encodedCode, null, json -> {
+                updateOutboundLabelStatus(json);
+                if (json.optJSONObject("dashboard") != null) {
+                    parseDashboard(json.optJSONObject("dashboard"));
+                } else {
+                    refreshDashboard(false);
+                }
+            }, error -> {
+                if (outboundLabelStatus != null) {
+                    outboundLabelStatus.setText("当前状态：查询失败\n原因：" + error);
+                }
+            });
+        } catch (Exception error) {
+            if (outboundLabelStatus != null) {
+                outboundLabelStatus.setText("当前状态：查询失败\n原因：" + error.getMessage());
+            }
+        }
+    }
+
+    private void updateOutboundLabelStatus(JSONObject json) {
+        if (outboundLabelStatus == null || json == null) {
+            return;
+        }
+        outboundLabelStatus.setText(formatLabelStatus(json));
+    }
+
+    private String formatLabelStatus(JSONObject json) {
+        JSONObject label = json.optJSONObject("label");
+        JSONObject product = json.optJSONObject("product");
+        if (label == null) {
+            return "当前状态：未查询到标签";
+        }
+
+        String status = label.optString("status");
+        String statusName = label.optString("statusName");
+        if (statusName.isEmpty()) {
+            statusName = "in_stock".equals(status) ? "在库，标签未剪" : "已出库";
+        }
+        String qualityGradeName = label.optString("qualityGradeName", "完品");
+        String outboundReason = label.optString("outboundReason");
+        String outboundAt = label.optString("outboundAt");
+
+        StringBuilder builder = new StringBuilder();
+        builder.append("当前状态：").append(statusName).append("\n");
+        builder.append("标签：").append(label.optString("labelCode")).append("\n");
+        builder.append("产品：").append(label.optString("productName")).append("\n");
+        builder.append("品相：").append(qualityGradeName.isEmpty() ? "完品" : qualityGradeName).append("\n");
+        if (!outboundReason.isEmpty()) {
+            builder.append("出库原因：").append(outboundReason).append("\n");
+        }
+        if (!outboundAt.isEmpty()) {
+            builder.append("出库时间：").append(outboundAt).append("\n");
+        }
+        if (product != null) {
+            builder.append("产品库存：").append(product.optInt("availableStock"));
         }
         return builder.toString();
     }

@@ -47,6 +47,7 @@ from .services import (
     delete_personnel,
     delete_product,
     get_dashboard,
+    get_inventory_label,
     get_inventory_system,
     list_personnel,
     get_logistics,
@@ -424,6 +425,14 @@ async def reinbound_label(payload: LabelReInboundRequest) -> dict:
         }
     except BusinessError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.get("/api/inventory/labels/{label_code}")
+async def get_label_api(label_code: str) -> dict:
+    try:
+        return get_inventory_label(label_code)
+    except BusinessError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
 
 
 @app.delete("/api/inventory/labels/{label_code}")

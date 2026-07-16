@@ -145,6 +145,41 @@ class InventoryStockTests(unittest.TestCase):
         self.assertEqual(system["labelOutboundReasons"], expected)
         self.assertEqual(system["outboundChannels"], expected)
 
+    def test_get_inventory_label_returns_current_outbound_status(self):
+        services.products[:] = [
+            {
+                "skuId": "SKU-TEST",
+                "name": "Test Pot",
+                "centralStock": 0,
+                "lockedStock": 0,
+                "safeStock": 0,
+                "warehouse": "Main",
+            }
+        ]
+        services.inventory_labels[:] = [
+            {
+                "labelCode": "0001-001",
+                "skuId": "SKU-TEST",
+                "productName": "Test Pot",
+                "status": "outbound",
+                "outboundAt": "2026-07-15T00:00:00+00:00",
+                "outboundReason": "破损出库",
+                "qualityGrade": "minor_flaw",
+                "qualityGradeName": "微瑕",
+            }
+        ]
+        services.orders[:] = []
+        services.stock_events[:] = []
+        services.stock_movements[:] = []
+        services.receipts[:] = []
+
+        result = services.get_inventory_label("0001-001")
+
+        self.assertEqual(result["label"]["statusName"], "已出库")
+        self.assertEqual(result["label"]["outboundReason"], "破损出库")
+        self.assertEqual(result["label"]["qualityGradeName"], "微瑕")
+        self.assertEqual(result["product"]["availableStock"], 0)
+
     def seed_product_with_stale_stock(self):
         services.products[:] = [
             {
